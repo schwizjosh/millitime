@@ -2,6 +2,10 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import postgres from '@fastify/postgres';
 import dotenv from 'dotenv';
+import { authRoutes } from './routes/auth';
+import { watchlistRoutes } from './routes/watchlist';
+import { signalsRoutes } from './routes/signals';
+import { SignalGenerator } from './services/signalGenerator';
 
 dotenv.config();
 
@@ -16,7 +20,7 @@ fastify.register(cors, {
 
 // Register PostgreSQL
 fastify.register(postgres, {
-  connectionString: process.env.DATABASE_URL || 'postgres://localhost:5432/millitime'
+  connectionString: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/millitime'
 });
 
 // Health check route
@@ -26,7 +30,7 @@ fastify.get('/health', async (request, reply) => {
 
 // API routes
 fastify.get('/api/hello', async (request, reply) => {
-  return { message: 'Hello from Millitime API!' };
+  return { message: 'Hello from Crypto Signals Bot!' };
 });
 
 // Example database query route
@@ -43,6 +47,11 @@ fastify.get('/api/test-db', async (request, reply) => {
   }
 });
 
+// Register routes
+fastify.register(authRoutes);
+fastify.register(watchlistRoutes);
+fastify.register(signalsRoutes);
+
 const start = async () => {
   try {
     const port = Number(process.env.PORT) || 3000;
@@ -50,6 +59,10 @@ const start = async () => {
 
     await fastify.listen({ port, host });
     console.log(`Server listening on ${host}:${port}`);
+
+    // Start signal generator
+    const signalGenerator = new SignalGenerator(fastify);
+    signalGenerator.start();
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

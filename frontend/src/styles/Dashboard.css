@@ -1,0 +1,402 @@
+.dashboard {
+  min-height: 100vh;
+  background: #f5f7fa;
+}
+
+.dashboard-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-header h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.btn-secondary {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.dashboard-tabs {
+  background: white;
+  display: flex;
+  padding: 0 40px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tab {
+  padding: 15px 30px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font-size: 16px;
+  color: #666;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.tab:hover {
+  color: #667eea;
+}
+
+.tab.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+  font-weight: 600;
+}
+
+.badge {
+  background: #f44336;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  margin-left: 5px;
+}
+
+.dashboard-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-size: 18px;
+  color: #666;
+}
+
+.error-message {
+  background: #fee;
+  color: #c33;
+  padding: 12px 40px;
+  border: 1px solid #fcc;
+  margin: 20px 40px;
+  border-radius: 5px;
+}
+
+.watchlist-section, .signals-section {
+  padding: 40px;
+}
+
+.search-section {
+  background: white;
+  padding: 30px;
+  border-radius: 10px;
+  margin-bottom: 30px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.search-section h2 {
+  margin: 0 0 20px 0;
+  color: #333;
+}
+
+.search-bar {
+  display: flex;
+  gap: 10px;
+}
+
+.search-bar input {
+  flex: 1;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.search-bar input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-small:hover {
+  background: #5568d3;
+}
+
+.search-results {
+  margin-top: 20px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+  margin-bottom: 10px;
+}
+
+.watchlist-grid {
+  background: white;
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.watchlist-grid h2 {
+  margin: 0 0 20px 0;
+  color: #333;
+}
+
+.coin-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.coin-card {
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 10px;
+  border: 2px solid #e0e0e0;
+  transition: all 0.2s;
+}
+
+.coin-card:hover {
+  border-color: #667eea;
+  transform: translateY(-2px);
+}
+
+.coin-card.inactive {
+  opacity: 0.6;
+}
+
+.coin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.coin-header h3 {
+  margin: 0;
+  color: #333;
+  font-size: 18px;
+}
+
+.coin-symbol {
+  background: #667eea;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.coin-price-info {
+  margin-bottom: 15px;
+}
+
+.price {
+  font-size: 24px;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 5px;
+}
+
+.price-change {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.price-change.positive {
+  color: #4caf50;
+}
+
+.price-change.negative {
+  color: #f44336;
+}
+
+.volume {
+  font-size: 12px;
+  color: #666;
+}
+
+.coin-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-toggle {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-toggle.active {
+  background: #4caf50;
+  color: white;
+  border-color: #4caf50;
+}
+
+.btn-danger-small {
+  padding: 8px 12px;
+  background: #f44336;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-danger-small:hover {
+  background: #d32f2f;
+}
+
+.empty-message {
+  text-align: center;
+  color: #666;
+  padding: 40px;
+  font-size: 16px;
+}
+
+.signals-section h2 {
+  margin: 0 0 20px 0;
+  color: #333;
+}
+
+.signals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.signal-card {
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+  border-left: 4px solid #ddd;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.signal-card:hover {
+  transform: translateX(5px);
+}
+
+.signal-card.unread {
+  background: #f0f8ff;
+  border-left-width: 6px;
+}
+
+.signal-card.signal-buy {
+  border-left-color: #4caf50;
+}
+
+.signal-card.signal-sell {
+  border-left-color: #f44336;
+}
+
+.signal-card.signal-hold {
+  border-left-color: #ff9800;
+}
+
+.signal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.signal-coin {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.signal-type {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+}
+
+.signal-type.buy {
+  background: #4caf50;
+}
+
+.signal-type.sell {
+  background: #f44336;
+}
+
+.signal-type.hold {
+  background: #ff9800;
+}
+
+.signal-strength {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #e0e0e0;
+  color: #666;
+}
+
+.signal-strength.strong {
+  background: #ff5722;
+  color: white;
+}
+
+.signal-strength.moderate {
+  background: #ff9800;
+  color: white;
+}
+
+.signal-time {
+  font-size: 12px;
+  color: #999;
+}
+
+.signal-message {
+  color: #333;
+  margin-bottom: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.signal-details {
+  display: flex;
+  gap: 20px;
+  font-size: 12px;
+  color: #666;
+}
