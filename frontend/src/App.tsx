@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Watchlist from './pages/Watchlist';
 import SignalsHistory from './pages/SignalsHistory';
 import Settings from './pages/Settings';
+import SpotlightCoins from './pages/SpotlightCoins';
 import './App.css';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -86,6 +87,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Settings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/spotlight"
+            element={
+              <ProtectedRoute>
+                <SpotlightCoins />
               </ProtectedRoute>
             }
           />

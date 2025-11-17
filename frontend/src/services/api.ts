@@ -65,6 +65,13 @@ export interface Signal {
   message: string;
   is_read: boolean;
   created_at: string;
+  // Futures parameters
+  position?: 'LONG' | 'SHORT';
+  leverage?: number;
+  entry_price?: number;
+  stop_loss?: number;
+  take_profit?: number;
+  risk_reward_ratio?: number;
 }
 
 export interface TradingSettings {
@@ -72,7 +79,52 @@ export interface TradingSettings {
   run_in_background: boolean;
   whatsapp_number: string | null;
   whatsapp_api_key: string | null;
+  preferred_exchange?: string;
+  exchange_api_key?: string | null;
+  exchange_api_secret?: string | null;
   updated_at: string;
+}
+
+export interface Exchange {
+  name: string;
+  displayName: string;
+  supportsFutures: boolean;
+}
+
+export interface SpotlightCoin {
+  id: number;
+  coin_id: string;
+  coin_symbol: string;
+  coin_name: string;
+  discovery_date: string;
+  source: string;
+  market_cap?: number;
+  volume_24h?: number;
+  price_change_24h?: number;
+  trending_score?: number;
+  description?: string;
+  metadata?: any;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface Backtest {
+  id: number;
+  coin_id: string;
+  coin_symbol: string;
+  start_date: string;
+  end_date: string;
+  initial_balance: number;
+  final_balance: number;
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  total_profit_loss: number;
+  profit_loss_percentage: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+  created_at: string;
 }
 
 export interface CoinPrice {
@@ -143,6 +195,50 @@ export const tradingAPI = {
 
   updateSettings: (payload: Partial<TradingSettings>) =>
     api.patch<{ settings: TradingSettings }>('/api/trading/settings', payload),
+
+  getExchanges: () =>
+    api.get<{ exchanges: Exchange[] }>('/api/trading/exchanges'),
+};
+
+// Spotlight coins APIs
+export const spotlightAPI = {
+  getCoins: () =>
+    api.get<{ coins: SpotlightCoin[] }>('/api/spotlight/coins'),
+
+  getMonitored: () =>
+    api.get<{ coins: SpotlightCoin[] }>('/api/spotlight/monitored'),
+
+  startMonitoring: (spotlight_coin_id: number) =>
+    api.post('/api/spotlight/monitor', { spotlight_coin_id }),
+
+  stopMonitoring: (spotlight_coin_id: number) =>
+    api.delete(`/api/spotlight/monitor/${spotlight_coin_id}`),
+
+  getHistory: (days = 7) =>
+    api.get('/api/spotlight/history', { params: { days } }),
+};
+
+// Backtest APIs
+export const backtestAPI = {
+  run: (params: {
+    coin_id: string;
+    coin_symbol: string;
+    start_date: string;
+    end_date: string;
+    initial_balance?: number;
+    risk_percentage?: number;
+    use_ai?: boolean;
+    use_futures?: boolean;
+  }) => api.post('/api/backtest/run', params),
+
+  getHistory: () =>
+    api.get<{ backtests: Backtest[] }>('/api/backtest/history'),
+
+  getDetails: (id: number) =>
+    api.get<{ backtest: Backtest }>(`/api/backtest/${id}`),
+
+  delete: (id: number) =>
+    api.delete(`/api/backtest/${id}`),
 };
 
 export default api;

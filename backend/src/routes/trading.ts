@@ -7,6 +7,9 @@ interface UpdateTradingSettingsBody {
   run_in_background?: boolean;
   whatsapp_number?: string | null;
   whatsapp_api_key?: string | null;
+  preferred_exchange?: string | null;
+  exchange_api_key?: string | null;
+  exchange_api_secret?: string | null;
 }
 
 export async function tradingRoutes(fastify: FastifyInstance) {
@@ -17,7 +20,8 @@ export async function tradingRoutes(fastify: FastifyInstance) {
 
     try {
       const result = await client.query<TradingSettings>(
-        `SELECT user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key, updated_at
+        `SELECT user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
+                preferred_exchange, exchange_api_key, exchange_api_secret, updated_at
          FROM trading_settings
          WHERE user_id = $1`,
         [userId]
@@ -25,9 +29,10 @@ export async function tradingRoutes(fastify: FastifyInstance) {
 
       if (result.rows.length === 0) {
         const insertResult = await client.query<TradingSettings>(
-          `INSERT INTO trading_settings (user_id, algo_enabled, run_in_background)
-           VALUES ($1, true, true)
-           RETURNING user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key, updated_at`,
+          `INSERT INTO trading_settings (user_id, algo_enabled, run_in_background, preferred_exchange)
+           VALUES ($1, true, true, 'binance')
+           RETURNING user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
+                     preferred_exchange, exchange_api_key, exchange_api_secret, updated_at`,
           [userId]
         );
         return reply.send({ settings: insertResult.rows[0] });
@@ -48,39 +53,59 @@ export async function tradingRoutes(fastify: FastifyInstance) {
     { preHandler: authMiddleware },
     async (request, reply) => {
       const userId = request.user!.id;
-      const { algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key } = request.body;
+      const {
+        algo_enabled,
+        run_in_background,
+        whatsapp_number,
+        whatsapp_api_key,
+        preferred_exchange,
+        exchange_api_key,
+        exchange_api_secret,
+      } = request.body;
 
-      if (
-        algo_enabled !== undefined &&
-        typeof algo_enabled !== 'boolean'
-      ) {
+      if (algo_enabled !== undefined && typeof algo_enabled !== 'boolean') {
         return reply.code(400).send({ error: 'algo_enabled must be boolean' });
       }
 
-      if (
-        run_in_background !== undefined &&
-        typeof run_in_background !== 'boolean'
-      ) {
+      if (run_in_background !== undefined && typeof run_in_background !== 'boolean') {
         return reply.code(400).send({ error: 'run_in_background must be boolean' });
       }
 
       const sanitizedNumber = whatsapp_number ? whatsapp_number.trim() : null;
-      const sanitizedKey = whatsapp_api_key ? whatsapp_api_key.trim() : null;
+      const sanitizedWhatsAppKey = whatsapp_api_key ? whatsapp_api_key.trim() : null;
+      const sanitizedExchange = preferred_exchange ? preferred_exchange.trim().toLowerCase() : null;
+      const sanitizedExchangeKey = exchange_api_key ? exchange_api_key.trim() : null;
+      const sanitizedExchangeSecret = exchange_api_secret ? exchange_api_secret.trim() : null;
 
       const client = await fastify.pg.connect();
 
       try {
         const result = await client.query<TradingSettings>(
-          `INSERT INTO trading_settings (user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key)
-           VALUES ($1, COALESCE($2, true), COALESCE($3, true), $4, $5)
+          `INSERT INTO trading_settings
+           (user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
+            preferred_exchange, exchange_api_key, exchange_api_secret)
+           VALUES ($1, COALESCE($2, true), COALESCE($3, true), $4, $5, $6, $7, $8)
            ON CONFLICT (user_id) DO UPDATE
              SET algo_enabled = COALESCE($2, trading_settings.algo_enabled),
                  run_in_background = COALESCE($3, trading_settings.run_in_background),
                  whatsapp_number = COALESCE($4, trading_settings.whatsapp_number),
                  whatsapp_api_key = COALESCE($5, trading_settings.whatsapp_api_key),
+                 preferred_exchange = COALESCE($6, trading_settings.preferred_exchange),
+                 exchange_api_key = COALESCE($7, trading_settings.exchange_api_key),
+                 exchange_api_secret = COALESCE($8, trading_settings.exchange_api_secret),
                  updated_at = CURRENT_TIMESTAMP
-           RETURNING user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key, updated_at`,
-          [userId, algo_enabled, run_in_background, sanitizedNumber, sanitizedKey]
+           RETURNING user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
+                     preferred_exchange, exchange_api_key, exchange_api_secret, updated_at`,
+          [
+            userId,
+            algo_enabled,
+            run_in_background,
+            sanitizedNumber,
+            sanitizedWhatsAppKey,
+            sanitizedExchange,
+            sanitizedExchangeKey,
+            sanitizedExchangeSecret,
+          ]
         );
 
         return reply.send({ settings: result.rows[0] });
@@ -92,4 +117,17 @@ export async function tradingRoutes(fastify: FastifyInstance) {
       }
     }
   );
+
+  // Get list of supported exchanges
+  fastify.get('/api/trading/exchanges', { preHandler: authMiddleware }, async (request, reply) => {
+    const exchanges = [
+      { name: 'binance', displayName: 'Binance', supportsFutures: true },
+      { name: 'kraken', displayName: 'Kraken', supportsFutures: true },
+      { name: 'coinbase', displayName: 'Coinbase', supportsFutures: false },
+      { name: 'bybit', displayName: 'Bybit', supportsFutures: true },
+      { name: 'okx', displayName: 'OKX', supportsFutures: true },
+    ];
+
+    return reply.send({ exchanges });
+  });
 }

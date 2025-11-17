@@ -200,3 +200,63 @@
     align-items: flex-start;
   }
 }
+
+/* Futures Trading Parameters */
+.futures-params {
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.futures-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.futures-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.position-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  color: white;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.futures-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.75rem;
+}
+
+.futures-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.futures-item span {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.futures-item strong {
+  font-size: 0.875rem;
+  color: white;
+}
+
+.text-red {
+  color: #ef4444 !important;
+}
+
+.text-green {
+  color: #10b981 !important;
+}

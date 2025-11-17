@@ -122,6 +122,40 @@ export default function SignalsHistory() {
                   Price: <strong>${typeof signal.price === 'number' ? signal.price.toFixed(2) : 'N/A'}</strong>
                 </div>
 
+                {/* Futures Trading Parameters */}
+                {signal.position && signal.leverage && (
+                  <div className="futures-params">
+                    <div className="futures-header">
+                      <span className="futures-label">Futures Trading</span>
+                      <span className="position-badge" style={{
+                        backgroundColor: signal.position === 'LONG' ? '#10b981' : '#ef4444'
+                      }}>
+                        {signal.position} {signal.leverage}x
+                      </span>
+                    </div>
+                    <div className="futures-details">
+                      <div className="futures-item">
+                        <span>Entry:</span>
+                        <strong>${signal.entry_price?.toFixed(signal.entry_price < 1 ? 6 : 2)}</strong>
+                      </div>
+                      <div className="futures-item">
+                        <span>Stop Loss:</span>
+                        <strong className="text-red">${signal.stop_loss?.toFixed(signal.stop_loss && signal.stop_loss < 1 ? 6 : 2)}</strong>
+                      </div>
+                      <div className="futures-item">
+                        <span>Take Profit:</span>
+                        <strong className="text-green">${signal.take_profit?.toFixed(signal.take_profit && signal.take_profit < 1 ? 6 : 2)}</strong>
+                      </div>
+                      {signal.risk_reward_ratio && (
+                        <div className="futures-item">
+                          <span>R:R Ratio:</span>
+                          <strong>1:{signal.risk_reward_ratio.toFixed(1)}</strong>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="signal-message">
                   {signal.message}
                 </div>

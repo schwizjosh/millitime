@@ -6,8 +6,13 @@ import { authRoutes } from './routes/auth';
 import { watchlistRoutes } from './routes/watchlist';
 import { signalsRoutes } from './routes/signals';
 import { tradingRoutes } from './routes/trading';
+import { spotlightRoutes } from './routes/spotlight';
+import { backtestRoutes } from './routes/backtest';
 import { SignalGenerator } from './services/signalGenerator';
 import { AISignalGenerator } from './services/aiSignalGenerator';
+import { SpotlightCoinsDiscoveryService } from './services/spotlightCoinsDiscovery';
+import { ExchangeIntegrationService } from './services/exchangeIntegration';
+import { AIProviderService } from './services/aiProvider';
 
 dotenv.config();
 
@@ -66,6 +71,8 @@ fastify.register(authRoutes);
 fastify.register(watchlistRoutes);
 fastify.register(signalsRoutes);
 fastify.register(tradingRoutes);
+fastify.register(spotlightRoutes);
+fastify.register(backtestRoutes);
 
 const start = async () => {
   try {
@@ -88,6 +95,24 @@ const start = async () => {
       const signalGenerator = new SignalGenerator(fastify);
       signalGenerator.start();
     }
+
+    // Start Exchange Integration Service
+    console.log('🏦 Starting Exchange Integration Service...');
+    const exchangeService = new ExchangeIntegrationService(fastify);
+    exchangeService.start();
+
+    // Start Spotlight Coins Discovery Service
+    console.log('🔍 Starting Spotlight Coins Discovery Service...');
+    let aiProvider: AIProviderService | undefined;
+    if (useAI) {
+      aiProvider = new AIProviderService({
+        openaiKey: process.env.OPENAI_API_KEY,
+        anthropicKey: process.env.ANTHROPIC_API_KEY,
+        preferredProvider: (process.env.AI_PROVIDER as any) || 'auto',
+      });
+    }
+    const spotlightService = new SpotlightCoinsDiscoveryService(fastify, aiProvider);
+    spotlightService.start();
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
