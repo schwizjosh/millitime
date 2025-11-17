@@ -196,19 +196,7 @@ export class AISignalGenerator {
   private async analyzeWithAI(
     coin: any,
     candles: any[]
-  ): Promise<{
-    type: 'BUY' | 'SELL' | 'HOLD';
-    strength: string;
-    technicalScore: number;
-    technicalConfluence: number;
-    technicalIndicators: any;
-    fundamentalScore: number;
-    overallScore: number;
-    aiRecommendation: string;
-    reasoning: string[];
-    riskFactors: string[];
-    tokensUsed: number;
-  } | null> {
+  ): Promise<EnhancedSignal | null> {
     // If AI is enabled, use enhanced strategy
     if (this.aiEnabled && this.aiStrategy) {
       try {
@@ -227,7 +215,7 @@ export class AISignalGenerator {
           return enhancedSignal;
         }
       } catch (error) {
-        this.fastify.log.error(`AI analysis failed for ${coin.symbol}, falling back:`, error);
+        this.fastify.log.error(`AI analysis failed for ${coin.symbol}, falling back: ${error}`);
         // Fall through to technical-only analysis
       }
     }
@@ -249,14 +237,18 @@ export class AISignalGenerator {
     return {
       type: technicalSignal.type,
       strength: technicalSignal.strength,
+      confidence: technicalSignal.confidence,
       technicalScore: technicalSignal.confidence,
       technicalConfluence: technicalSignal.confidence,
       technicalIndicators: technicalSignal.indicators,
       fundamentalScore: 50, // Neutral
+      fundamentalRecommendation: 'N/A',
+      aiInsight: 'Technical analysis only (AI disabled)',
+      aiRecommendation: 'HOLD',
       overallScore: technicalSignal.confidence,
-      aiRecommendation: 'N/A',
       reasoning: technicalSignal.signals || [],
       riskFactors: [],
+      provider: 'technical-only',
       tokensUsed: 0,
     };
   }

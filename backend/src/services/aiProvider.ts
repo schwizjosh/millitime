@@ -46,7 +46,7 @@ export class AIProviderService {
    * Claude: Better for complex reasoning, nuanced analysis
    */
   private selectProvider(taskComplexity: 'simple' | 'moderate' | 'complex'): 'openai' | 'anthropic' {
-    if (this.config.preferredProvider !== 'auto') {
+    if (this.config.preferredProvider && this.config.preferredProvider !== 'auto') {
       return this.config.preferredProvider;
     }
 
