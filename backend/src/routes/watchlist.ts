@@ -173,8 +173,18 @@ export async function watchlistRoutes(fastify: FastifyInstance) {
 
       const coinIds = watchlistResult.rows.map((row: any) => row.coin_id);
 
-      // Fetch current prices from CoinGecko
-      const marketData = await coingeckoService.getCoinsMarkets(coinIds);
+      // Fetch current prices from CoinGecko with rate limit handling
+      let marketData;
+      try {
+        marketData = await coingeckoService.getCoinsMarkets(coinIds);
+      } catch (apiError: any) {
+        // If rate limited (429), return empty array gracefully
+        if (apiError.response?.status === 429) {
+          fastify.log.warn('CoinGecko rate limit reached, returning empty prices');
+          return reply.send({ prices: [], rateLimited: true });
+        }
+        throw apiError;
+      }
 
       // Store prices in price_history table
       for (const coin of marketData) {

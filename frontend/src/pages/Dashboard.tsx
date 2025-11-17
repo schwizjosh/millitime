@@ -566,7 +566,7 @@ const Dashboard: React.FC = () => {
                             {signal.indicators?.macd && (
                               <div className="metric">
                                 <span className="metric-label">MACD</span>
-                                <span className="metric-value">{signal.indicators.macd.toFixed(2)}</span>
+                                <span className="metric-value">{signal.indicators.macd.MACD?.toFixed(4) || 'N/A'}</span>
                               </div>
                             )}
                           </div>
