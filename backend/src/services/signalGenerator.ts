@@ -159,7 +159,7 @@ export class SignalGenerator {
         }
       }
     } catch (error: any) {
-      this.fastify.log.error('Error generating signals:', error);
+      this.fastify.log.error({ error }, 'Error generating signals');
     } finally {
       client.release();
     }

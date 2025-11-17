@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { spotlightAPI, SpotlightCoin } from '../services/api';
+import { spotlightAPI } from '../services/api';
+import type { SpotlightCoin } from '../services/api';
 import '../styles/SpotlightCoins.css';
 
 export default function SpotlightCoins() {

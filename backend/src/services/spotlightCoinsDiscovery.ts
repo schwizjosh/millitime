@@ -127,7 +127,7 @@ export class SpotlightCoinsDiscoveryService {
       this.fastify.log.info(`Discovered ${uniqueCoins.length} spotlight coins`);
       return uniqueCoins;
     } catch (error: any) {
-      this.fastify.log.error('Error discovering spotlight coins:', error);
+      this.fastify.log.error({ error }, 'Error discovering spotlight coins');
       return [];
     } finally {
       client.release();
@@ -162,7 +162,7 @@ export class SpotlightCoinsDiscoveryService {
 
       return coins;
     } catch (error) {
-      this.fastify.log.error('Error fetching CoinGecko trending:', error);
+      this.fastify.log.error({ error }, 'Error fetching CoinGecko trending');
       return [];
     }
   }
@@ -203,7 +203,7 @@ export class SpotlightCoinsDiscoveryService {
 
       return gainers.sort((a, b) => b.trending_score - a.trending_score).slice(0, 20);
     } catch (error) {
-      this.fastify.log.error('Error fetching top gainers:', error);
+      this.fastify.log.error({ error }, 'Error fetching top gainers');
       return [];
     }
   }
@@ -243,7 +243,7 @@ export class SpotlightCoinsDiscoveryService {
 
       return highVolumeCoins.sort((a, b) => b.trending_score - a.trending_score).slice(0, 15);
     } catch (error) {
-      this.fastify.log.error('Error fetching high volume coins:', error);
+      this.fastify.log.error({ error }, 'Error fetching high volume coins');
       return [];
     }
   }
@@ -308,7 +308,7 @@ export class SpotlightCoinsDiscoveryService {
 
       return newsCoins;
     } catch (error) {
-      this.fastify.log.error('Error in AI news analysis:', error);
+      this.fastify.log.error({ error }, 'Error in AI news analysis');
       return [];
     }
   }

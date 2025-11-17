@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
-import { tradingAPI, Exchange } from '../services/api';
+import { tradingAPI } from '../services/api';
+import type { Exchange } from '../services/api';
 import '../styles/Settings.css';
 
 const TIMEZONES = [

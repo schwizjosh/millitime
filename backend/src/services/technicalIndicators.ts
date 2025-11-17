@@ -7,6 +7,7 @@ export interface CandleData {
   low: number;
   close: number;
   volume: number;
+  timestamp?: number; // Optional timestamp for compatibility
 }
 
 export interface TechnicalIndicatorValues {
@@ -28,6 +29,7 @@ export interface TechnicalIndicatorValues {
   volumeTrend?: number | null;
   priceMomentum?: number;
   rangePosition?: number;
+  atr?: number; // Average True Range for volatility measurement
 }
 
 export interface SignalResult {

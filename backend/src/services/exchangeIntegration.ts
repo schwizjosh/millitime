@@ -119,7 +119,7 @@ export class ExchangeIntegrationService {
             );
           }
         } catch (error) {
-          this.fastify.log.error(`Error syncing ${exchangeName}:`, error);
+          this.fastify.log.error({ error }, `Error syncing ${exchangeName}`);
         }
       }
     } finally {
@@ -150,7 +150,7 @@ export class ExchangeIntegrationService {
           return [];
       }
     } catch (error) {
-      this.fastify.log.error(`Error fetching coins from ${exchangeName}:`, error);
+      this.fastify.log.error({ error }, `Error fetching coins from ${exchangeName}`);
       return [];
     }
   }
@@ -208,7 +208,7 @@ export class ExchangeIntegrationService {
 
       return coins;
     } catch (error) {
-      this.fastify.log.error('Error fetching Binance coins:', error);
+      this.fastify.log.error({ error }, 'Error fetching Binance coins');
       return [];
     }
   }
@@ -248,7 +248,7 @@ export class ExchangeIntegrationService {
 
       return coins;
     } catch (error) {
-      this.fastify.log.error('Error fetching Kraken coins:', error);
+      this.fastify.log.error({ error }, 'Error fetching Kraken coins');
       return [];
     }
   }
@@ -287,7 +287,7 @@ export class ExchangeIntegrationService {
 
       return coins;
     } catch (error) {
-      this.fastify.log.error('Error fetching Coinbase coins:', error);
+      this.fastify.log.error({ error }, 'Error fetching Coinbase coins');
       return [];
     }
   }
@@ -327,7 +327,7 @@ export class ExchangeIntegrationService {
 
       return coins;
     } catch (error) {
-      this.fastify.log.error('Error fetching Bybit coins:', error);
+      this.fastify.log.error({ error }, 'Error fetching Bybit coins');
       return [];
     }
   }
