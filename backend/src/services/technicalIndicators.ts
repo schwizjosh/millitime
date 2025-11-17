@@ -25,6 +25,9 @@ export interface TechnicalIndicatorValues {
   ema21: number;
   ema50: number;
   sma20: number;
+  volumeTrend?: number | null;
+  priceMomentum?: number;
+  rangePosition?: number;
 }
 
 export interface SignalResult {
@@ -140,6 +143,23 @@ export class TechnicalIndicatorService {
 
     const closePrices = candles.map(c => c.close);
     const currentPrice = closePrices[closePrices.length - 1];
+    const recentCandles = candles.slice(-40);
+    const momentumLookback = Math.min(5, candles.length - 1);
+    const momentumBaseline = candles[candles.length - 1 - momentumLookback]?.close || currentPrice;
+    const priceMomentum = ((currentPrice - momentumBaseline) / momentumBaseline) * 100;
+
+    const volumes = recentCandles.map(c => c.volume || 0);
+    const avgVolume =
+      volumes.length > 0 ? volumes.reduce((sum, value) => sum + value, 0) / volumes.length : 0;
+    const latestVolume = volumes[volumes.length - 1] || 0;
+    const volumeTrend = avgVolume > 0 ? ((latestVolume - avgVolume) / avgVolume) * 100 : null;
+
+    const recentHigh = Math.max(...recentCandles.map(c => c.high));
+    const recentLow = Math.min(...recentCandles.map(c => c.low));
+    const rangePosition =
+      recentHigh !== recentLow
+        ? ((currentPrice - recentLow) / (recentHigh - recentLow)) * 100
+        : 50;
 
     const rsi = this.calculateRSI(closePrices);
     const macd = this.calculateMACD(closePrices);
@@ -159,6 +179,9 @@ export class TechnicalIndicatorService {
       ema21: emas.ema21,
       ema50: emas.ema50 || emas.ema21, // Fallback to EMA21 if not enough data
       sma20,
+      volumeTrend,
+      priceMomentum,
+      rangePosition,
     };
   }
 
@@ -240,37 +263,73 @@ export class TechnicalIndicatorService {
       signals.push('Price crossed below EMA9');
     }
 
+    // Strategy 5: Volume confirmation
+    if (typeof indicators.volumeTrend === 'number' && !Number.isNaN(indicators.volumeTrend)) {
+      if (indicators.volumeTrend > 25) {
+        buyScore += 10;
+        signals.push('Volume spike confirms buyers');
+      } else if (indicators.volumeTrend < -25) {
+        sellScore += 10;
+        signals.push('Volume drop confirms sellers');
+      }
+    }
+
+    // Strategy 6: Short-term price momentum
+    if (typeof indicators.priceMomentum === 'number') {
+      if (indicators.priceMomentum > 1.2) {
+        buyScore += 10;
+        signals.push(`Positive momentum (${indicators.priceMomentum.toFixed(2)}%)`);
+      } else if (indicators.priceMomentum < -1.2) {
+        sellScore += 10;
+        signals.push(`Negative momentum (${indicators.priceMomentum.toFixed(2)}%)`);
+      }
+    }
+
+    // Strategy 7: Local range positioning (support/resistance awareness)
+    if (typeof indicators.rangePosition === 'number') {
+      if (indicators.rangePosition <= 20) {
+        buyScore += 10;
+        signals.push('Price sitting on local support');
+      } else if (indicators.rangePosition >= 80) {
+        sellScore += 10;
+        signals.push('Price testing local resistance');
+      }
+    }
+
     // Determine signal type and strength based on confluence score
+    const normalizedBuyScore = Math.min(Math.round(buyScore), 100);
+    const normalizedSellScore = Math.min(Math.round(sellScore), 100);
+
     let signalType: 'BUY' | 'SELL' | 'HOLD';
     let strength: 'STRONG' | 'MODERATE' | 'WEAK';
     let confidence: number;
     let message: string;
 
-    if (buyScore > sellScore && buyScore >= 60) {
+    if (normalizedBuyScore > normalizedSellScore && normalizedBuyScore >= 60) {
       signalType = 'BUY';
-      strength = buyScore >= 80 ? 'STRONG' : buyScore >= 70 ? 'MODERATE' : 'WEAK';
-      confidence = buyScore;
-      message = `${strength} BUY signal with ${buyScore}% confluence: ${signals.join(', ')}`;
-    } else if (sellScore > buyScore && sellScore >= 60) {
+      strength = normalizedBuyScore >= 80 ? 'STRONG' : normalizedBuyScore >= 70 ? 'MODERATE' : 'WEAK';
+      confidence = normalizedBuyScore;
+      message = `${strength} BUY signal with ${normalizedBuyScore}% confluence: ${signals.join(', ')}`;
+    } else if (normalizedSellScore > normalizedBuyScore && normalizedSellScore >= 60) {
       signalType = 'SELL';
-      strength = sellScore >= 80 ? 'STRONG' : sellScore >= 70 ? 'MODERATE' : 'WEAK';
-      confidence = sellScore;
-      message = `${strength} SELL signal with ${sellScore}% confluence: ${signals.join(', ')}`;
-    } else if (buyScore > sellScore && buyScore >= 45) {
+      strength = normalizedSellScore >= 80 ? 'STRONG' : normalizedSellScore >= 70 ? 'MODERATE' : 'WEAK';
+      confidence = normalizedSellScore;
+      message = `${strength} SELL signal with ${normalizedSellScore}% confluence: ${signals.join(', ')}`;
+    } else if (normalizedBuyScore > normalizedSellScore && normalizedBuyScore >= 45) {
       signalType = 'BUY';
       strength = 'WEAK';
-      confidence = buyScore;
-      message = `WEAK BUY signal with ${buyScore}% confluence: ${signals.join(', ')}`;
-    } else if (sellScore > buyScore && sellScore >= 45) {
+      confidence = normalizedBuyScore;
+      message = `WEAK BUY signal with ${normalizedBuyScore}% confluence: ${signals.join(', ')}`;
+    } else if (normalizedSellScore > normalizedBuyScore && normalizedSellScore >= 45) {
       signalType = 'SELL';
       strength = 'WEAK';
-      confidence = sellScore;
-      message = `WEAK SELL signal with ${sellScore}% confluence: ${signals.join(', ')}`;
+      confidence = normalizedSellScore;
+      message = `WEAK SELL signal with ${normalizedSellScore}% confluence: ${signals.join(', ')}`;
     } else {
       signalType = 'HOLD';
       strength = 'MODERATE';
-      confidence = Math.max(buyScore, sellScore);
-      message = `HOLD - No strong confluence. Buy score: ${buyScore}%, Sell score: ${sellScore}%. ${signals.join(', ') || 'Neutral indicators'}`;
+      confidence = Math.max(normalizedBuyScore, normalizedSellScore);
+      message = `HOLD - No strong confluence. Buy score: ${normalizedBuyScore}%, Sell score: ${normalizedSellScore}%. ${signals.join(', ') || 'Neutral indicators'}`;
     }
 
     return {

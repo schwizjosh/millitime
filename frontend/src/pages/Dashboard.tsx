@@ -26,6 +26,7 @@ const Dashboard: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [settingsMessage, setSettingsMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'watchlist' | 'signals' | 'settings'>('watchlist');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -33,6 +34,8 @@ const Dashboard: React.FC = () => {
   const [timezone, setTimezone] = useState('UTC');
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(false);
+  const [aiEnhancementsEnabled, setAiEnhancementsEnabled] = useState(true);
+  const [settingsInitialized, setSettingsInitialized] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -45,11 +48,13 @@ const Dashboard: React.FC = () => {
     const savedTimezone = localStorage.getItem('timezone') || 'UTC';
     const savedEmailNotifications = localStorage.getItem('emailNotifications') !== 'false';
     const savedPushNotifications = localStorage.getItem('pushNotifications') === 'true';
+    const savedAiEnhancements = localStorage.getItem('aiEnhancementsEnabled');
 
     setDarkMode(savedDarkMode);
     setTimezone(savedTimezone);
     setEmailNotifications(savedEmailNotifications);
     setPushNotifications(savedPushNotifications);
+    setAiEnhancementsEnabled(savedAiEnhancements === null ? true : savedAiEnhancements === 'true');
 
     // Apply dark mode
     if (savedDarkMode) {
@@ -58,6 +63,8 @@ const Dashboard: React.FC = () => {
 
     loadDashboard();
     const interval = setInterval(loadPrices, 60000); // Refresh prices every minute
+
+    setSettingsInitialized(true);
 
     return () => clearInterval(interval);
   }, [user, navigate]);
@@ -81,11 +88,8 @@ const Dashboard: React.FC = () => {
     localStorage.setItem('emailNotifications', emailNotifications.toString());
     localStorage.setItem('pushNotifications', pushNotifications.toString());
     setError('');
-    // Show success message briefly
-    setTimeout(() => {
-      setError('Settings saved successfully!');
-      setTimeout(() => setError(''), 2000);
-    }, 100);
+    setSettingsMessage('Settings saved successfully!');
+    setTimeout(() => setSettingsMessage(''), 2500);
   };
 
   const loadDashboard = async () => {
@@ -113,10 +117,16 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const loadSignals = async () => {
-    const response = await signalsAPI.getSignals(20, 0);
+  const loadSignals = async (limit?: number) => {
+    const response = await signalsAPI.getSignals(limit ?? (aiEnhancementsEnabled ? 50 : 20), 0);
     setSignals(response.data.signals);
   };
+
+  useEffect(() => {
+    if (settingsInitialized) {
+      loadSignals();
+    }
+  }, [aiEnhancementsEnabled, settingsInitialized]);
 
   const loadUnreadCount = async () => {
     const response = await signalsAPI.getUnreadCount();
@@ -171,6 +181,14 @@ const Dashboard: React.FC = () => {
       setError('Failed to update coin');
       setTimeout(() => setError(''), 3000);
     }
+  };
+
+  const toggleAiEnhancements = () => {
+    setAiEnhancementsEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem('aiEnhancementsEnabled', next.toString());
+      return next;
+    });
   };
 
   const handleMarkAsRead = async (id: number) => {
@@ -415,13 +433,22 @@ const Dashboard: React.FC = () => {
           </div>
         </header>
 
-        {/* Error Message */}
+        {/* Error / Success Messages */}
         {error && (
           <div className="alert error-alert">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
             </svg>
             {error}
+          </div>
+        )}
+
+        {settingsMessage && (
+          <div className="alert success-alert">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M16.707 7.293a1 1 0 00-1.414-1.414L9 12.172 6.707 9.879a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l7-7z" />
+            </svg>
+            {settingsMessage}
           </div>
         )}
 
@@ -468,29 +495,34 @@ const Dashboard: React.FC = () => {
 
           {/* AI Actions - PRIORITY #2 */}
           <div className="ai-actions-section">
-            <h2 className="section-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-                <path d="M2 17l10 5 10-5"></path>
-                <path d="M2 12l10 5 10-5"></path>
-              </svg>
-              AI Analysis
-            </h2>
-            <div className="ai-buttons">
-              <button className="ai-btn primary">
+            <div className="ai-section-header">
+              <h2 className="section-title">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                  <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                  <path d="M2 17l10 5 10-5"></path>
+                  <path d="M2 12l10 5 10-5"></path>
                 </svg>
-                Get AI Insights
-              </button>
-              <button className="ai-btn secondary">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-                Market Summary
-              </button>
+                AI Analysis
+              </h2>
+              <span className={`ai-status ${aiEnhancementsEnabled ? 'active' : 'inactive'}`}>
+                {aiEnhancementsEnabled ? 'Enhanced insights enabled' : 'Standard mode'}
+              </span>
             </div>
+            <div className="ai-toggle-card">
+              <div>
+                <h3>AI Enhancements</h3>
+                <p>Boost signal depth with contextual AI summaries and deeper indicator stacks.</p>
+              </div>
+              <label className="toggle-switch">
+                <input type="checkbox" checked={aiEnhancementsEnabled} onChange={toggleAiEnhancements} />
+                <span className="toggle-slider"></span>
+              </label>
+            </div>
+            <p className="ai-helper-text">
+              {aiEnhancementsEnabled
+                ? 'Signals now include extended confluence checks, higher history depth, and richer commentary.'
+                : 'Switch on AI enhancements to unlock extended confluence checks and upgraded copy.'}
+            </p>
           </div>
 
           {/* FA News - PRIORITY #3 */}
