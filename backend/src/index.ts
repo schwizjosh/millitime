@@ -6,13 +6,17 @@ import { authRoutes } from './routes/auth';
 import { watchlistRoutes } from './routes/watchlist';
 import { signalsRoutes } from './routes/signals';
 import { SignalGenerator } from './services/signalGenerator';
+import { AISignalGenerator } from './services/aiSignalGenerator';
 
 dotenv.config();
 
 console.log('Environment loaded:', {
   DATABASE_URL: process.env.DATABASE_URL,
   PORT: process.env.PORT,
-  JWT_SECRET: process.env.JWT_SECRET ? '***set***' : 'undefined'
+  JWT_SECRET: process.env.JWT_SECRET ? '***set***' : 'undefined',
+  AI_ENABLED: process.env.ENABLE_AI_ANALYSIS !== 'false',
+  OPENAI_KEY: process.env.OPENAI_API_KEY ? '***set***' : 'not set',
+  ANTHROPIC_KEY: process.env.ANTHROPIC_API_KEY ? '***set***' : 'not set',
 });
 
 const fastify = Fastify({
@@ -69,9 +73,19 @@ const start = async () => {
     await fastify.listen({ port, host });
     console.log(`Server listening on ${host}:${port}`);
 
-    // Start signal generator
-    const signalGenerator = new SignalGenerator(fastify);
-    signalGenerator.start();
+    // Start AI-enhanced signal generator (falls back to technical-only if no AI keys)
+    const useAI = process.env.ENABLE_AI_ANALYSIS !== 'false' &&
+                  (process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY);
+
+    if (useAI) {
+      console.log('🤖 Starting AI-Enhanced Signal Generator...');
+      const aiSignalGenerator = new AISignalGenerator(fastify);
+      aiSignalGenerator.start();
+    } else {
+      console.log('📊 Starting Technical Analysis Signal Generator...');
+      const signalGenerator = new SignalGenerator(fastify);
+      signalGenerator.start();
+    }
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
