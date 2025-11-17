@@ -1,4 +1,4 @@
-// MilliTime Service Worker
+// Millitime Service Worker
 const CACHE_NAME = 'millitime-v1';
 const urlsToCache = [
   '/',

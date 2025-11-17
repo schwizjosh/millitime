@@ -59,7 +59,7 @@ const Register: React.FC = () => {
                   </defs>
                 </svg>
               </div>
-              <h1 className="brand-title">MilliTime</h1>
+              <h1 className="brand-title">Millitime</h1>
             </div>
 
             <div className="brand-features">

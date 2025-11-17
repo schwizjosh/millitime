@@ -190,6 +190,26 @@
   background: white;
   padding: 32px 40px;
   border-bottom: 1px solid #e5e7eb;
+  position: relative;
+}
+
+.mobile-menu-btn {
+  display: none;
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #1a1a1a;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.mobile-menu-btn:hover {
+  background: #f3f4f6;
 }
 
 .header-title h1 {
@@ -200,10 +220,30 @@
   letter-spacing: -0.5px;
 }
 
+.mobile-title {
+  display: none;
+}
+
+.desktop-title {
+  display: block;
+}
+
 .header-subtitle {
   margin: 0;
   font-size: 15px;
   color: #6b7280;
+}
+
+/* Mobile Overlay */
+.mobile-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 99;
 }
 
 /* Stats Grid */
@@ -287,7 +327,255 @@
   padding: 0 40px 40px;
   display: flex;
   flex-direction: column;
+  gap: 24px;
+}
+
+/* Latest Signal Hero - PRIORITY #1 */
+.latest-signal-hero {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+  border-radius: 20px;
+  padding: 32px;
+  color: white;
+  box-shadow: 0 20px 40px rgba(139, 92, 246, 0.3);
+  margin-top: 24px;
+}
+
+.hero-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.hero-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.hero-signal {
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  border-left: 5px solid #8b5cf6;
+  backdrop-filter: blur(10px);
+}
+
+.hero-signal.signal-buy {
+  border-left-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.hero-signal.signal-sell {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.hero-signal.signal-hold {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.hero-coin-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.hero-symbol {
+  font-size: 28px;
+  font-weight: 800;
+  color: white;
+  letter-spacing: -0.5px;
+}
+
+.hero-signal-badge {
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hero-signal-badge.buy {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.hero-signal-badge.sell {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
+.hero-signal-badge.hold {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
+.hero-strength {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.hero-price {
+  font-size: 42px;
+  font-weight: 800;
+  color: white;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+
+.hero-message {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.6;
+  margin: 0 0 20px 0;
+}
+
+.hero-metrics {
+  display: flex;
   gap: 32px;
+  flex-wrap: wrap;
+}
+
+.hero-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hero-metric .metric-label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hero-metric .metric-value {
+  font-size: 20px;
+  color: white;
+  font-weight: 700;
+}
+
+/* AI Actions Section - PRIORITY #2 */
+.ai-actions-section {
+  background: white;
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f3f4f6;
+}
+
+.ai-buttons {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ai-btn {
+  flex: 1;
+  min-width: 200px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: none;
+}
+
+.ai-btn.primary {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: white;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.ai-btn.primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4);
+}
+
+.ai-btn.secondary {
+  background: white;
+  color: #8b5cf6;
+  border: 2px solid #8b5cf6;
+}
+
+.ai-btn.secondary:hover {
+  background: #f5f3ff;
+  transform: translateY(-3px);
+}
+
+/* FA News Section - PRIORITY #3 */
+.fa-news-section {
+  background: white;
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f3f4f6;
+}
+
+.news-placeholder {
+  padding: 40px 20px;
+  text-align: center;
+  color: #6b7280;
+  background: #f9fafb;
+  border-radius: 12px;
+  border: 2px dashed #e5e7eb;
+}
+
+.news-placeholder p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Quick Stats - Minimized */
+.quick-stats {
+  display: flex;
+  gap: 16px;
+  justify-content: space-around;
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f3f4f6;
+}
+
+.stat-mini {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-mini .stat-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-mini .stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1a1a;
 }
 
 /* Section Title */
@@ -338,6 +626,7 @@
   display: flex;
   gap: 12px;
   align-items: center;
+  position: relative;
 }
 
 .search-input {
@@ -347,12 +636,11 @@
   border-radius: 12px;
   font-size: 15px;
   transition: all 0.2s;
-  position: relative;
 }
 
 .search-icon {
   position: absolute;
-  left: 48px;
+  left: 16px;
   color: #9ca3af;
   pointer-events: none;
 }
@@ -950,10 +1238,25 @@
 @media (max-width: 768px) {
   .sidebar {
     transform: translateX(-100%);
+    width: 280px;
   }
 
   .sidebar.collapsed {
+    width: 280px;
+  }
+
+  .sidebar.mobile-open {
     transform: translateX(0);
+  }
+
+  .mobile-overlay {
+    display: block;
+  }
+
+  .mobile-menu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .main-content {
@@ -961,28 +1264,63 @@
   }
 
   .page-header {
-    padding: 24px 20px;
+    padding: 20px 20px 20px 60px;
+  }
+
+  .mobile-title {
+    display: block;
+    font-size: 22px !important;
+  }
+
+  .desktop-title {
+    display: none;
+  }
+
+  .desktop-subtitle {
+    display: none;
   }
 
   .header-title h1 {
+    font-size: 22px;
+  }
+
+  .latest-signal-hero {
+    padding: 24px;
+    margin-top: 16px;
+  }
+
+  .hero-price {
+    font-size: 32px;
+  }
+
+  .hero-symbol {
     font-size: 24px;
   }
 
-  .stats-grid {
-    padding: 20px;
-    grid-template-columns: 1fr;
-    gap: 16px;
+  .ai-buttons {
+    flex-direction: column;
+  }
+
+  .ai-btn {
+    min-width: 100%;
+  }
+
+  .quick-stats {
+    flex-direction: row;
+    gap: 12px;
   }
 
   .content-area {
-    padding: 0 20px 20px;
-    gap: 24px;
+    padding: 0 16px 20px;
+    gap: 20px;
   }
 
   .search-card,
   .watchlist-container,
-  .signals-container {
-    padding: 20px;
+  .signals-container,
+  .ai-actions-section,
+  .fa-news-section {
+    padding: 20px 16px;
   }
 
   .coin-grid {
@@ -995,6 +1333,11 @@
 
   .search-button {
     width: 100%;
+    justify-content: center;
+  }
+
+  .search-icon {
+    left: 16px;
   }
 }
 

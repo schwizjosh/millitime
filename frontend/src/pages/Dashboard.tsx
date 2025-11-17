@@ -28,6 +28,7 @@ const Dashboard: React.FC = () => {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'watchlist' | 'signals'>('watchlist');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -193,10 +194,18 @@ const Dashboard: React.FC = () => {
     );
   }
 
+  // Get latest signal
+  const latestSignal = signals.length > 0 ? signals[0] : null;
+
   return (
     <div className="dashboard">
+      {/* Mobile Overlay */}
+      {mobileMenuOpen && (
+        <div className="mobile-overlay" onClick={() => setMobileMenuOpen(false)}></div>
+      )}
+
       {/* Sidebar */}
-      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-header">
           <div className="logo">
             <svg width="32" height="32" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -210,7 +219,7 @@ const Dashboard: React.FC = () => {
                 </linearGradient>
               </defs>
             </svg>
-            {!sidebarCollapsed && <span className="logo-text">MilliTime</span>}
+            {!sidebarCollapsed && <span className="logo-text">Millitime</span>}
           </div>
           <button
             className="sidebar-toggle"
@@ -250,6 +259,17 @@ const Dashboard: React.FC = () => {
               <span className="nav-badge notification">{unreadCount}</span>
             )}
           </button>
+
+          <button
+            className="nav-item"
+            onClick={() => navigate('/settings')}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v6m0 6v6m8.66-12l-5.2 3m-2.92 1.68l-5.2 3M21 12h-6m-6 0H3m17.66 6l-5.2-3m-2.92-1.68l-5.2-3"></path>
+            </svg>
+            {!sidebarCollapsed && <span>Settings</span>}
+          </button>
         </nav>
 
         <div className="sidebar-footer">
@@ -273,67 +293,27 @@ const Dashboard: React.FC = () => {
       <main className="main-content">
         {/* Header */}
         <header className="page-header">
+          <button
+            className="mobile-menu-btn"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle menu"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
           <div className="header-title">
-            <h1>{activeTab === 'watchlist' ? 'Portfolio Watchlist' : 'Trading Signals'}</h1>
-            <p className="header-subtitle">
+            <h1 className="desktop-title">{activeTab === 'watchlist' ? 'Portfolio Watchlist' : 'Trading Signals'}</h1>
+            <h1 className="mobile-title">Millitime</h1>
+            <p className="header-subtitle desktop-subtitle">
               {activeTab === 'watchlist'
                 ? 'Track and monitor your cryptocurrency portfolio in real-time'
                 : 'AI-powered trading signals based on multi-indicator confluence'}
             </p>
           </div>
         </header>
-
-        {/* Stats Overview */}
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-icon purple">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <circle cx="12" cy="12" r="3"></circle>
-              </svg>
-            </div>
-            <div className="stat-content">
-              <p className="stat-label">Total Coins</p>
-              <p className="stat-value">{stats.totalCoins}</p>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon green">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-              </svg>
-            </div>
-            <div className="stat-content">
-              <p className="stat-label">Active Monitoring</p>
-              <p className="stat-value">{stats.activeCoins}</p>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon blue">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
-              </svg>
-            </div>
-            <div className="stat-content">
-              <p className="stat-label">24h Signals</p>
-              <p className="stat-value">{stats.recentSignals}</p>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon orange">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-              </svg>
-            </div>
-            <div className="stat-content">
-              <p className="stat-label">Unread</p>
-              <p className="stat-value">{unreadCount}</p>
-            </div>
-          </div>
-        </div>
 
         {/* Error Message */}
         {error && (
@@ -347,6 +327,101 @@ const Dashboard: React.FC = () => {
 
         {/* Content Area */}
         <div className="content-area">
+          {/* Latest Signal - PRIORITY #1 */}
+          {latestSignal && (
+            <div className="latest-signal-hero">
+              <div className="hero-header">
+                <h2>Latest Signal</h2>
+                <span className="signal-time">{formatDate(latestSignal.created_at)}</span>
+              </div>
+              <div className={`hero-signal ${getSignalColor(latestSignal.signal_type)}`}>
+                <div className="hero-coin-info">
+                  <span className="hero-symbol">{latestSignal.coin_symbol.toUpperCase()}</span>
+                  <span className={`hero-signal-badge ${latestSignal.signal_type.toLowerCase()}`}>
+                    {latestSignal.signal_type}
+                  </span>
+                  {latestSignal.strength && (
+                    <span className={`hero-strength ${latestSignal.strength.toLowerCase()}`}>
+                      {latestSignal.strength} Signal
+                    </span>
+                  )}
+                </div>
+                <div className="hero-price">{formatPrice(latestSignal.price)}</div>
+                <p className="hero-message">{latestSignal.message}</p>
+                <div className="hero-metrics">
+                  {latestSignal.indicators?.rsi && (
+                    <div className="hero-metric">
+                      <span className="metric-label">RSI</span>
+                      <span className="metric-value">{latestSignal.indicators.rsi.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {latestSignal.indicators?.macd && (
+                    <div className="hero-metric">
+                      <span className="metric-label">MACD</span>
+                      <span className="metric-value">{latestSignal.indicators.macd.MACD?.toFixed(4) || 'N/A'}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AI Actions - PRIORITY #2 */}
+          <div className="ai-actions-section">
+            <h2 className="section-title">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                <path d="M2 17l10 5 10-5"></path>
+                <path d="M2 12l10 5 10-5"></path>
+              </svg>
+              AI Analysis
+            </h2>
+            <div className="ai-buttons">
+              <button className="ai-btn primary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                </svg>
+                Get AI Insights
+              </button>
+              <button className="ai-btn secondary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                Market Summary
+              </button>
+            </div>
+          </div>
+
+          {/* FA News - PRIORITY #3 */}
+          <div className="fa-news-section">
+            <h2 className="section-title">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+              </svg>
+              Fundamental Analysis
+            </h2>
+            <div className="news-placeholder">
+              <p>News feed coming soon - tracking market events, announcements, and fundamental data</p>
+            </div>
+          </div>
+
+          {/* Quick Stats - Moved down */}
+          <div className="quick-stats">
+            <div className="stat-mini">
+              <span className="stat-label">Active</span>
+              <span className="stat-value">{stats.activeCoins}/{stats.totalCoins}</span>
+            </div>
+            <div className="stat-mini">
+              <span className="stat-label">24h Signals</span>
+              <span className="stat-value">{stats.recentSignals}</span>
+            </div>
+            <div className="stat-mini">
+              <span className="stat-label">Unread</span>
+              <span className="stat-value">{unreadCount}</span>
+            </div>
+          </div>
           {activeTab === 'watchlist' && (
             <>
               {/* Search Section */}
