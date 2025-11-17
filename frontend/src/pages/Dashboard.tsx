@@ -26,9 +26,13 @@ const Dashboard: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'watchlist' | 'signals'>('watchlist');
+  const [activeTab, setActiveTab] = useState<'watchlist' | 'signals' | 'settings'>('watchlist');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [timezone, setTimezone] = useState('UTC');
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [pushNotifications, setPushNotifications] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -36,11 +40,53 @@ const Dashboard: React.FC = () => {
       return;
     }
 
+    // Load settings from localStorage
+    const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+    const savedTimezone = localStorage.getItem('timezone') || 'UTC';
+    const savedEmailNotifications = localStorage.getItem('emailNotifications') !== 'false';
+    const savedPushNotifications = localStorage.getItem('pushNotifications') === 'true';
+
+    setDarkMode(savedDarkMode);
+    setTimezone(savedTimezone);
+    setEmailNotifications(savedEmailNotifications);
+    setPushNotifications(savedPushNotifications);
+
+    // Apply dark mode
+    if (savedDarkMode) {
+      document.body.classList.add('dark-mode');
+    }
+
     loadDashboard();
     const interval = setInterval(loadPrices, 60000); // Refresh prices every minute
 
     return () => clearInterval(interval);
   }, [user, navigate]);
+
+  // Dark mode toggle handler
+  const toggleDarkMode = () => {
+    const newDarkMode = !darkMode;
+    setDarkMode(newDarkMode);
+    localStorage.setItem('darkMode', newDarkMode.toString());
+
+    if (newDarkMode) {
+      document.body.classList.add('dark-mode');
+    } else {
+      document.body.classList.remove('dark-mode');
+    }
+  };
+
+  // Save settings handler
+  const saveSettings = () => {
+    localStorage.setItem('timezone', timezone);
+    localStorage.setItem('emailNotifications', emailNotifications.toString());
+    localStorage.setItem('pushNotifications', pushNotifications.toString());
+    setError('');
+    // Show success message briefly
+    setTimeout(() => {
+      setError('Settings saved successfully!');
+      setTimeout(() => setError(''), 2000);
+    }, 100);
+  };
 
   const loadDashboard = async () => {
     try {
@@ -164,7 +210,14 @@ const Dashboard: React.FC = () => {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+    return new Date(dateString).toLocaleString('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const getPortfolioStats = () => {
@@ -180,6 +233,49 @@ const Dashboard: React.FC = () => {
   };
 
   const stats = getPortfolioStats();
+
+  // Comprehensive timezone list
+  const timezones = [
+    'UTC',
+    'Africa/Abidjan',
+    'Africa/Accra',
+    'Africa/Addis_Ababa',
+    'Africa/Algiers',
+    'Africa/Cairo',
+    'Africa/Casablanca',
+    'Africa/Johannesburg',
+    'Africa/Lagos',
+    'Africa/Nairobi',
+    'America/Anchorage',
+    'America/Chicago',
+    'America/Denver',
+    'America/Los_Angeles',
+    'America/Mexico_City',
+    'America/New_York',
+    'America/Sao_Paulo',
+    'America/Toronto',
+    'Asia/Bangkok',
+    'Asia/Dubai',
+    'Asia/Hong_Kong',
+    'Asia/Jakarta',
+    'Asia/Karachi',
+    'Asia/Kolkata',
+    'Asia/Manila',
+    'Asia/Seoul',
+    'Asia/Shanghai',
+    'Asia/Singapore',
+    'Asia/Tokyo',
+    'Australia/Melbourne',
+    'Australia/Sydney',
+    'Europe/Amsterdam',
+    'Europe/Berlin',
+    'Europe/Istanbul',
+    'Europe/London',
+    'Europe/Moscow',
+    'Europe/Paris',
+    'Europe/Rome',
+    'Pacific/Auckland',
+  ];
 
   if (loading) {
     return (
@@ -261,8 +357,8 @@ const Dashboard: React.FC = () => {
           </button>
 
           <button
-            className="nav-item"
-            onClick={() => navigate('/settings')}
+            className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
+            onClick={() => setActiveTab('settings')}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3"></circle>
@@ -305,12 +401,16 @@ const Dashboard: React.FC = () => {
             </svg>
           </button>
           <div className="header-title">
-            <h1 className="desktop-title">{activeTab === 'watchlist' ? 'Portfolio Watchlist' : 'Trading Signals'}</h1>
+            <h1 className="desktop-title">
+              {activeTab === 'watchlist' ? 'Portfolio Watchlist' : activeTab === 'signals' ? 'Trading Signals' : 'Settings'}
+            </h1>
             <h1 className="mobile-title">Millitime</h1>
             <p className="header-subtitle desktop-subtitle">
               {activeTab === 'watchlist'
                 ? 'Track and monitor your cryptocurrency portfolio in real-time'
-                : 'AI-powered trading signals based on multi-indicator confluence'}
+                : activeTab === 'signals'
+                ? 'AI-powered trading signals based on multi-indicator confluence'
+                : 'Customize your experience'}
             </p>
           </div>
         </header>
@@ -651,6 +751,134 @@ const Dashboard: React.FC = () => {
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'settings' && (
+            <div className="settings-container-dash">
+              {/* Account Section */}
+              <div className="settings-section">
+                <h2 className="section-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                  Account
+                </h2>
+                <div className="settings-group">
+                  <div className="setting-item">
+                    <label>Username</label>
+                    <input type="text" value={user?.username || ''} disabled />
+                  </div>
+                  <div className="setting-item">
+                    <label>Email</label>
+                    <input type="email" value={user?.email || ''} disabled />
+                  </div>
+                </div>
+              </div>
+
+              {/* Appearance */}
+              <div className="settings-section">
+                <h2 className="section-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+                  </svg>
+                  Appearance
+                </h2>
+                <div className="settings-group">
+                  <div className="setting-item toggle-item">
+                    <div>
+                      <label>Dark Mode</label>
+                      <p className="setting-description">Enable dark theme for better viewing at night</p>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={darkMode}
+                        onChange={() => toggleDarkMode()}
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Regional Settings */}
+              <div className="settings-section">
+                <h2 className="section-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                  Regional Settings
+                </h2>
+                <div className="settings-group">
+                  <div className="setting-item">
+                    <label>Timezone</label>
+                    <p className="setting-description">Set your timezone for accurate signal timestamps</p>
+                    <select value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+                      {timezones.map((tz) => (
+                        <option key={tz} value={tz}>
+                          {tz}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notifications */}
+              <div className="settings-section">
+                <h2 className="section-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                  </svg>
+                  Notifications
+                </h2>
+                <div className="settings-group">
+                  <div className="setting-item toggle-item">
+                    <div>
+                      <label>Email Notifications</label>
+                      <p className="setting-description">Receive trading signals via email</p>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={emailNotifications}
+                        onChange={(e) => setEmailNotifications(e.target.checked)}
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div className="setting-item toggle-item">
+                    <div>
+                      <label>Push Notifications</label>
+                      <p className="setting-description">Get instant alerts for new signals</p>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={pushNotifications}
+                        onChange={(e) => setPushNotifications(e.target.checked)}
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="settings-actions">
+                <button onClick={saveSettings} className="btn-save">
+                  Save Changes
+                </button>
+                <button onClick={logout} className="btn-logout">
+                  Logout
+                </button>
+              </div>
             </div>
           )}
         </div>
