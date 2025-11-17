@@ -99,7 +99,7 @@ export class AISignalGenerator {
       }
 
       // Get unique coin IDs
-      const allCoinIds = Array.from(new Set(watchlistResult.rows.map((row: any) => row.coin_id)));
+      const allCoinIds = Array.from(new Set(watchlistResult.rows.map((row: any) => row.coin_id as string)));
 
       // Fetch market data
       const marketData = await coingeckoService.getCoinsMarkets(allCoinIds);
@@ -244,7 +244,7 @@ export class AISignalGenerator {
         this.fastify.log.info(`Total AI tokens used this cycle: ${totalTokensUsed}`);
       }
     } catch (error: any) {
-      this.fastify.log.error('Error generating AI signals:', error);
+      this.fastify.log.error({ error }, 'Error generating AI signals');
     } finally {
       client.release();
     }

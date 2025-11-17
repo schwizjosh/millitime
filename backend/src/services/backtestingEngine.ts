@@ -87,7 +87,7 @@ export class BacktestingEngine {
     // Fetch historical candle data
     const candles = await this.fetchHistoricalCandles(coinId, coinSymbol, startDate, endDate);
 
-    if (candles.length < 50) {
+    if (!candles || candles.length < 50) {
       throw new Error('Insufficient historical data for backtesting');
     }
 
@@ -156,8 +156,8 @@ export class BacktestingEngine {
           );
 
           currentPosition = {
-            entryTime: currentCandle.timestamp,
-            exitTime: currentCandle.timestamp, // Will be updated on exit
+            entryTime: new Date(currentCandle.timestamp || currentCandle.time),
+            exitTime: new Date(currentCandle.timestamp || currentCandle.time), // Will be updated on exit
             signal: signal.type,
             position: futuresParams?.position,
             entryPrice: futuresParams?.entry_price || currentCandle.close,
@@ -260,7 +260,7 @@ export class BacktestingEngine {
           { includeAI: true, includeFundamental: false } // Skip FA for speed
         );
       } catch (error) {
-        this.fastify.log.error('AI signal generation failed in backtest:', error);
+        this.fastify.log.error({ error }, 'AI signal generation failed in backtest');
       }
     }
 
