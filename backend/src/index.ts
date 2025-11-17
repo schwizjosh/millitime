@@ -5,6 +5,9 @@ import dotenv from 'dotenv';
 import { authRoutes } from './routes/auth';
 import { watchlistRoutes } from './routes/watchlist';
 import { signalsRoutes } from './routes/signals';
+import { portfolioRoutes } from './routes/portfolio';
+import { actionStepsRoutes } from './routes/actionSteps';
+import { tokenUsageRoutes } from './routes/tokenUsage';
 import { SignalGenerator } from './services/signalGenerator';
 import { AISignalGenerator } from './services/aiSignalGenerator';
 
@@ -64,6 +67,15 @@ fastify.get('/api/test-db', async (request, reply) => {
 fastify.register(authRoutes);
 fastify.register(watchlistRoutes);
 fastify.register(signalsRoutes);
+fastify.register(async (instance) => {
+  await portfolioRoutes(instance, instance.pg.pool);
+});
+fastify.register(async (instance) => {
+  await actionStepsRoutes(instance, instance.pg.pool);
+});
+fastify.register(async (instance) => {
+  await tokenUsageRoutes(instance, instance.pg.pool);
+});
 
 const start = async () => {
   try {

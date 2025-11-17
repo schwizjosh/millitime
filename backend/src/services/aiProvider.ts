@@ -13,8 +13,11 @@ export interface AIMessage {
 export interface AIResponse {
   content: string;
   tokensUsed: number;
+  promptTokens: number;
+  completionTokens: number;
   model: string;
   provider: 'openai' | 'anthropic';
+  costUSD: number;
   cached?: boolean;
 }
 
@@ -78,6 +81,24 @@ export class AIProviderService {
   }
 
   /**
+   * Calculate USD cost based on token usage and provider pricing
+   * Pricing as of January 2025:
+   * - OpenAI GPT-4o-mini: $0.150/1M input, $0.600/1M output
+   * - Anthropic Claude 3.5 Haiku: $1.00/1M input, $5.00/1M output
+   */
+  private calculateCost(provider: 'openai' | 'anthropic', promptTokens: number, completionTokens: number): number {
+    if (provider === 'openai') {
+      const inputCost = (promptTokens / 1_000_000) * 0.150;
+      const outputCost = (completionTokens / 1_000_000) * 0.600;
+      return inputCost + outputCost;
+    } else {
+      const inputCost = (promptTokens / 1_000_000) * 1.00;
+      const outputCost = (completionTokens / 1_000_000) * 5.00;
+      return inputCost + outputCost;
+    }
+  }
+
+  /**
    * Generate cache key for response caching
    */
   private getCacheKey(messages: AIMessage[], provider: string): string {
@@ -125,11 +146,18 @@ export class AIProviderService {
       }
     );
 
+    const promptTokens = response.data.usage.prompt_tokens;
+    const completionTokens = response.data.usage.completion_tokens;
+    const costUSD = this.calculateCost('openai', promptTokens, completionTokens);
+
     return {
       content: response.data.choices[0].message.content,
       tokensUsed: response.data.usage.total_tokens,
+      promptTokens,
+      completionTokens,
       model: response.data.model,
       provider: 'openai',
+      costUSD,
       cached: false,
     };
   }
@@ -169,11 +197,18 @@ export class AIProviderService {
       }
     );
 
+    const promptTokens = response.data.usage.input_tokens;
+    const completionTokens = response.data.usage.output_tokens;
+    const costUSD = this.calculateCost('anthropic', promptTokens, completionTokens);
+
     return {
       content: response.data.content[0].text,
-      tokensUsed: response.data.usage.input_tokens + response.data.usage.output_tokens,
+      tokensUsed: promptTokens + completionTokens,
+      promptTokens,
+      completionTokens,
       model: response.data.model,
       provider: 'anthropic',
+      costUSD,
       cached: false,
     };
   }

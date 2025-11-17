@@ -72,3 +72,97 @@ export interface CoinGeckoMarketData {
   roi: any;
   last_updated: string;
 }
+
+export interface Portfolio {
+  id: number;
+  user_id: number;
+  coin_id: string;
+  coin_symbol: string;
+  coin_name: string;
+  quantity: number;
+  average_buy_price: number;
+  total_invested: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface TradeHistory {
+  id: number;
+  user_id: number;
+  trade_type: 'BUY' | 'SELL' | 'SWAP';
+  from_coin_id?: string;
+  from_coin_symbol?: string;
+  from_quantity?: number;
+  to_coin_id: string;
+  to_coin_symbol: string;
+  to_quantity: number;
+  price: number;
+  total_value: number;
+  fee: number;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED';
+  notes?: string;
+  created_at: Date;
+}
+
+export interface TokenUsage {
+  id: number;
+  user_id: number;
+  provider: 'openai' | 'anthropic';
+  model: string;
+  operation: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  related_coin_id?: string;
+  created_at: Date;
+}
+
+export interface AIActionStep {
+  step: number;
+  action: string;
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  reason: string;
+  completed?: boolean;
+}
+
+export interface AIActionSteps {
+  id: number;
+  user_id: number;
+  coin_id: string;
+  coin_symbol: string;
+  signal_id?: number;
+  action_plan: AIActionStep[];
+  status: 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+  confidence: number;
+  reasoning: string;
+  tokens_used: number;
+  cost_usd: number;
+  created_at: Date;
+  updated_at: Date;
+  completed_at?: Date;
+}
+
+export interface UserSettings {
+  id: number;
+  user_id: number;
+  initial_balance: number;
+  current_balance: number;
+  preferred_ai_provider: 'auto' | 'openai' | 'anthropic';
+  show_token_costs: boolean;
+  auto_generate_actions: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface TokenCostSummary {
+  total_cost_usd: number;
+  by_provider: {
+    openai: number;
+    anthropic: number;
+  };
+  by_operation: Record<string, number>;
+  total_tokens: number;
+  period_start: Date;
+  period_end: Date;
+}
