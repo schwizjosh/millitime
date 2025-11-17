@@ -24,6 +24,7 @@ export default function Dashboard() {
   });
   const [timezone] = useState(() => localStorage.getItem('timezone') || 'UTC');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   useEffect(() => {
     if (!user) {
@@ -31,6 +32,13 @@ export default function Dashboard() {
       return;
     }
     loadDashboard();
+
+    // Auto-refresh every 5 minutes
+    const refreshInterval = setInterval(() => {
+      loadDashboard();
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(refreshInterval);
   }, [user, navigate]);
 
   const loadDashboard = async () => {
@@ -57,6 +65,7 @@ export default function Dashboard() {
           summary: 'Several tech giants reported stronger than expected quarterly earnings.'
         }
       ]);
+      setLastRefresh(new Date());
     } catch (error) {
       console.error('Failed to load dashboard:', error);
     } finally {
@@ -194,16 +203,25 @@ export default function Dashboard() {
               <line x1="3" y1="18" x2="21" y2="18"></line>
             </svg>
           </button>
-          <div className="ai-toggle-minimal">
-            <span className="ai-label">AI</span>
-            <label className="toggle-switch-minimal">
-              <input
-                type="checkbox"
-                checked={aiEnabled}
-                onChange={toggleAiEnhancements}
-              />
-              <span className="toggle-slider-minimal"></span>
-            </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <span style={{ fontSize: '12px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              Updated {formatDate(lastRefresh.toISOString())}
+            </span>
+            <div className="ai-toggle-minimal">
+              <span className="ai-label">AI</span>
+              <label className="toggle-switch-minimal">
+                <input
+                  type="checkbox"
+                  checked={aiEnabled}
+                  onChange={toggleAiEnhancements}
+                />
+                <span className="toggle-slider-minimal"></span>
+              </label>
+            </div>
           </div>
         </header>
 

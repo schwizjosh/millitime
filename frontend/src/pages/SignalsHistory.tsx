@@ -8,15 +8,24 @@ export default function SignalsHistory() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'ALL' | 'BUY' | 'SELL' | 'HOLD'>('ALL');
   const [timezone] = useState(() => localStorage.getItem('timezone') || 'UTC');
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   useEffect(() => {
     fetchSignals();
+
+    // Auto-refresh every 5 minutes
+    const refreshInterval = setInterval(() => {
+      fetchSignals();
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(refreshInterval);
   }, []);
 
   const fetchSignals = async () => {
     try {
       const response = await signalsAPI.getSignals(100, 0);
       setSignals(response.data.signals || []);
+      setLastRefresh(new Date());
     } catch (error) {
       console.error('Failed to fetch signals:', error);
     } finally {
@@ -60,7 +69,16 @@ export default function SignalsHistory() {
     <Layout>
       <div className="signals-history-container">
       <div className="signals-header">
-        <h1>Signal History</h1>
+        <div>
+          <h1>Signal History</h1>
+          <span style={{ fontSize: '12px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+            Updated {formatDate(lastRefresh.toISOString())} • Refreshes every 5min
+          </span>
+        </div>
         <div className="filter-buttons">
           {(['ALL', 'BUY', 'SELL', 'HOLD'] as const).map((filterType) => (
             <button
