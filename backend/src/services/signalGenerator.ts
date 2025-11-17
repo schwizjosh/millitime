@@ -1,13 +1,15 @@
 import { FastifyInstance } from 'fastify';
 import { coingeckoService } from './coingecko';
+import { candleDataFetcher } from './candleDataFetcher';
+import { technicalIndicatorService, TechnicalIndicatorValues } from './technicalIndicators';
 import cron from 'node-cron';
 
-interface TechnicalIndicators {
-  rsi?: number;
-  macd?: { value: number; signal: number; histogram: number };
+interface TechnicalIndicators extends TechnicalIndicatorValues {
   priceChange24h: number;
   priceChangePercentage24h: number;
   volumeChange?: number;
+  confluence?: number;
+  signals?: string[];
 }
 
 export class SignalGenerator {
@@ -20,7 +22,7 @@ export class SignalGenerator {
 
   /**
    * Start the signal generation cron job
-   * Runs every 5 minutes
+   * Runs every 15 minutes (aligned with 15-minute candlestick timeframe)
    */
   start() {
     if (this.isRunning) {
@@ -28,9 +30,9 @@ export class SignalGenerator {
       return;
     }
 
-    // Run every 5 minutes
-    cron.schedule('*/5 * * * *', async () => {
-      this.fastify.log.info('Running signal generation...');
+    // Run every 15 minutes (at :00, :15, :30, :45)
+    cron.schedule('*/15 * * * *', async () => {
+      this.fastify.log.info('Running 15-minute signal generation...');
       await this.generateSignals();
     });
 
@@ -38,11 +40,11 @@ export class SignalGenerator {
     this.generateSignals();
 
     this.isRunning = true;
-    this.fastify.log.info('Signal generator started');
+    this.fastify.log.info('Signal generator started - 15-minute timeframe with advanced technical analysis');
   }
 
   /**
-   * Generate signals for all active watchlist items
+   * Generate signals for all active watchlist items using 15-minute candlestick data
    */
   private async generateSignals() {
     const client = await this.fastify.pg.connect();
@@ -58,9 +60,8 @@ export class SignalGenerator {
         return;
       }
 
-      const coinIds = watchlistResult.rows.map((row: any) => row.coin_id);
-
       // Fetch current market data
+      const coinIds = watchlistResult.rows.map((row: any) => row.coin_id);
       const marketData = await coingeckoService.getCoinsMarkets(coinIds);
 
       for (const coin of marketData) {
@@ -79,17 +80,19 @@ export class SignalGenerator {
           ]
         );
 
-        // Get historical prices for this coin (last 24 hours)
-        const historyResult = await client.query(
-          `SELECT price, timestamp
-           FROM price_history
-           WHERE coin_id = $1 AND timestamp > NOW() - INTERVAL '24 hours'
-           ORDER BY timestamp ASC`,
-          [coin.id]
-        );
+        // Get 15-minute candlestick data from multiple sources (100 candles = 25 hours of data)
+        const coinSymbol = coin.symbol.toUpperCase();
+        const candles = await candleDataFetcher.fetch15MinCandles(coin.id, coinSymbol, 100);
 
-        // Analyze and generate signals
-        const signal = this.analyzeAndGenerateSignal(coin, historyResult.rows);
+        if (!candles || candles.length < 50) {
+          this.fastify.log.warn(
+            `Not enough candlestick data for ${coin.symbol}, skipping advanced analysis`
+          );
+          continue;
+        }
+
+        // Analyze and generate signals using advanced technical indicators
+        const signal = this.analyzeWithTechnicalIndicators(coin, candles);
 
         if (signal) {
           // Get users watching this coin
@@ -98,27 +101,39 @@ export class SignalGenerator {
             [coin.id]
           );
 
-          // Create signal for each user
+          // Create signal for each user (avoid duplicates within 15 minutes)
           for (const user of usersResult.rows) {
-            await client.query(
-              `INSERT INTO signals
-               (user_id, coin_id, coin_symbol, signal_type, price, strength, indicators, message)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-              [
-                user.user_id,
-                coin.id,
-                coin.symbol,
-                signal.type,
-                coin.current_price,
-                signal.strength,
-                JSON.stringify(signal.indicators),
-                signal.message,
-              ]
+            // Check if we already sent a similar signal in the last 15 minutes
+            const recentSignal = await client.query(
+              `SELECT id FROM signals
+               WHERE user_id = $1 AND coin_id = $2 AND signal_type = $3
+               AND created_at > NOW() - INTERVAL '15 minutes'
+               ORDER BY created_at DESC LIMIT 1`,
+              [user.user_id, coin.id, signal.type]
             );
+
+            // Only create signal if no recent duplicate or if it's a STRONG signal
+            if (recentSignal.rows.length === 0 || signal.strength === 'STRONG') {
+              await client.query(
+                `INSERT INTO signals
+                 (user_id, coin_id, coin_symbol, signal_type, price, strength, indicators, message)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [
+                  user.user_id,
+                  coin.id,
+                  coin.symbol,
+                  signal.type,
+                  coin.current_price,
+                  signal.strength,
+                  JSON.stringify(signal.indicators),
+                  signal.message,
+                ]
+              );
+            }
           }
 
           this.fastify.log.info(
-            `Generated ${signal.type} signal for ${coin.symbol} at $${coin.current_price}`
+            `Generated ${signal.type} (${signal.strength}) signal for ${coin.symbol} at $${coin.current_price} - Confluence: ${signal.indicators.confluence}%`
           );
         }
       }
@@ -130,112 +145,50 @@ export class SignalGenerator {
   }
 
   /**
-   * Analyze price data and generate trading signal
+   * Analyze 15-minute candlestick data using advanced technical indicators
+   * Returns confluence-based trading signals
    */
-  private analyzeAndGenerateSignal(
+  private analyzeWithTechnicalIndicators(
     coin: any,
-    priceHistory: any[]
+    candles: any[]
   ): { type: 'BUY' | 'SELL' | 'HOLD'; strength: string; indicators: TechnicalIndicators; message: string } | null {
-    const indicators: TechnicalIndicators = {
-      priceChange24h: coin.price_change_24h,
-      priceChangePercentage24h: coin.price_change_percentage_24h,
-    };
+    // Generate confluence signal using multiple technical indicators
+    const confluenceSignal = technicalIndicatorService.generateConfluenceSignal(candles);
 
-    // Simple signal generation based on price changes and volume
-    const priceChangePercent = coin.price_change_percentage_24h;
-
-    // Calculate RSI (simplified - using 24h price change as proxy)
-    // In production, you'd calculate proper RSI with 14 periods
-    const rsi = this.calculateSimpleRSI(priceHistory);
-    indicators.rsi = rsi;
-
-    // Signal generation logic
-    let signalType: 'BUY' | 'SELL' | 'HOLD' | null = null;
-    let strength: 'STRONG' | 'MODERATE' | 'WEAK' = 'MODERATE';
-    let message = '';
-
-    // Strong buy signals
-    if (priceChangePercent < -10 && rsi < 30) {
-      signalType = 'BUY';
-      strength = 'STRONG';
-      message = `Strong buy opportunity: ${coin.symbol} is oversold (RSI: ${rsi.toFixed(2)}) and down ${Math.abs(priceChangePercent).toFixed(2)}% in 24h`;
-    }
-    // Moderate buy signals
-    else if (priceChangePercent < -5 && rsi < 40) {
-      signalType = 'BUY';
-      strength = 'MODERATE';
-      message = `Buy signal: ${coin.symbol} shows oversold conditions (RSI: ${rsi.toFixed(2)}) with ${Math.abs(priceChangePercent).toFixed(2)}% decline`;
-    }
-    // Strong sell signals
-    else if (priceChangePercent > 15 && rsi > 70) {
-      signalType = 'SELL';
-      strength = 'STRONG';
-      message = `Strong sell signal: ${coin.symbol} is overbought (RSI: ${rsi.toFixed(2)}) and up ${priceChangePercent.toFixed(2)}% in 24h`;
-    }
-    // Moderate sell signals
-    else if (priceChangePercent > 8 && rsi > 60) {
-      signalType = 'SELL';
-      strength = 'MODERATE';
-      message = `Sell signal: ${coin.symbol} shows overbought conditions (RSI: ${rsi.toFixed(2)}) with ${priceChangePercent.toFixed(2)}% gain`;
-    }
-    // Weak buy on dip
-    else if (priceChangePercent < -3) {
-      signalType = 'BUY';
-      strength = 'WEAK';
-      message = `Potential buy opportunity: ${coin.symbol} dipped ${Math.abs(priceChangePercent).toFixed(2)}% in 24h`;
-    }
-    // Significant price movement notification
-    else if (Math.abs(priceChangePercent) > 10) {
-      signalType = 'HOLD';
-      strength = 'MODERATE';
-      message = `High volatility alert: ${coin.symbol} ${priceChangePercent > 0 ? 'up' : 'down'} ${Math.abs(priceChangePercent).toFixed(2)}% - monitor closely`;
-    }
-
-    if (!signalType) {
+    if (!confluenceSignal) {
       return null;
     }
 
-    return {
-      type: signalType,
-      strength,
-      indicators,
-      message,
+    // Only generate signals for BUY/SELL with at least 45% confluence
+    // or STRONG signals with 60%+ confluence
+    const shouldGenerateSignal =
+      (confluenceSignal.type === 'BUY' || confluenceSignal.type === 'SELL') &&
+      (confluenceSignal.confidence >= 45 ||
+        (confluenceSignal.strength === 'STRONG' && confluenceSignal.confidence >= 60));
+
+    if (!shouldGenerateSignal && confluenceSignal.type !== 'HOLD') {
+      return null;
+    }
+
+    // Add 24h price change data to indicators
+    const indicators: TechnicalIndicators = {
+      ...confluenceSignal.indicators,
+      priceChange24h: coin.price_change_24h,
+      priceChangePercentage24h: coin.price_change_percentage_24h,
+      confluence: confluenceSignal.confidence,
+      signals: confluenceSignal.signals,
     };
-  }
 
-  /**
-   * Calculate simplified RSI using price history
-   * In production, use proper RSI calculation with 14 periods
-   */
-  private calculateSimpleRSI(priceHistory: any[]): number {
-    if (priceHistory.length < 2) {
-      return 50; // Neutral if not enough data
-    }
+    // Format message with coin symbol and current price
+    const formattedMessage = `${coin.symbol.toUpperCase()} @ $${coin.current_price.toFixed(
+      coin.current_price < 1 ? 6 : 2
+    )} - ${confluenceSignal.message}`;
 
-    let gains = 0;
-    let losses = 0;
-    let count = 0;
-
-    for (let i = 1; i < priceHistory.length; i++) {
-      const change = priceHistory[i].price - priceHistory[i - 1].price;
-      if (change > 0) {
-        gains += change;
-      } else {
-        losses += Math.abs(change);
-      }
-      count++;
-    }
-
-    if (count === 0) return 50;
-
-    const avgGain = gains / count;
-    const avgLoss = losses / count;
-
-    if (avgLoss === 0) return 100;
-
-    const rs = avgGain / avgLoss;
-    const rsi = 100 - (100 / (1 + rs));
-
-    return rsi;
+    return {
+      type: confluenceSignal.type,
+      strength: confluenceSignal.strength,
+      indicators,
+      message: formattedMessage,
+    };
   }
 }

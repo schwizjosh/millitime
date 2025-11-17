@@ -148,6 +148,43 @@ export class CoinGeckoService {
       return response.data;
     });
   }
+
+  /**
+   * Get OHLC data (candlestick) for a coin
+   * Interval: 1 hour for last 24 hours, or 4 hours, daily, etc.
+   * @param coinId - CoinGecko coin ID
+   * @param days - Number of days (1, 7, 14, 30, 90, 180, 365, max)
+   */
+  async getOHLC(coinId: string, days: number = 1): Promise<any> {
+    return this.queueRequest(async () => {
+      const response = await this.api.get(`/coins/${coinId}/ohlc`, {
+        params: {
+          vs_currency: 'usd',
+          days: days,
+        },
+      });
+      return response.data;
+    });
+  }
+
+  /**
+   * Get market chart data with price, market_cap, and volume
+   * Returns data points at intervals based on days requested
+   * @param coinId - CoinGecko coin ID
+   * @param days - Number of days (1 = 5min intervals, 2-90 = hourly, >90 = daily)
+   */
+  async getMarketChart(coinId: string, days: number = 1): Promise<any> {
+    return this.queueRequest(async () => {
+      const response = await this.api.get(`/coins/${coinId}/market_chart`, {
+        params: {
+          vs_currency: 'usd',
+          days: days,
+          interval: days === 1 ? '' : 'hourly',
+        },
+      });
+      return response.data;
+    });
+  }
 }
 
 // Export singleton instance

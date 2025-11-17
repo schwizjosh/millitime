@@ -9,6 +9,12 @@ import { SignalGenerator } from './services/signalGenerator';
 
 dotenv.config();
 
+console.log('Environment loaded:', {
+  DATABASE_URL: process.env.DATABASE_URL,
+  PORT: process.env.PORT,
+  JWT_SECRET: process.env.JWT_SECRET ? '***set***' : 'undefined'
+});
+
 const fastify = Fastify({
   logger: true
 });
@@ -18,9 +24,12 @@ fastify.register(cors, {
   origin: process.env.FRONTEND_URL || 'http://localhost:5173'
 });
 
+const dbConnectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/millitime';
+console.log('Using DATABASE_URL:', dbConnectionString);
+
 // Register PostgreSQL
 fastify.register(postgres, {
-  connectionString: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/millitime'
+  connectionString: dbConnectionString
 });
 
 // Health check route
