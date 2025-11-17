@@ -9,6 +9,8 @@ import { candleDataFetcher } from './candleDataFetcher';
 import { technicalIndicatorService } from './technicalIndicators';
 import { AIProviderService } from './aiProvider';
 import { AITradingStrategyService, EnhancedSignal } from './aiTradingStrategy';
+import { FuturesCalculator } from './futuresCalculator';
+import { ExchangeIntegrationService } from './exchangeIntegration';
 import cron from 'node-cron';
 import { fetchTradingSettingsMap } from '../utils/tradingSettings';
 import { sendWhatsAppNotification } from './whatsappNotifier';
@@ -19,9 +21,11 @@ export class AISignalGenerator {
   private aiProvider: AIProviderService | null = null;
   private aiStrategy: AITradingStrategyService | null = null;
   private aiEnabled = false;
+  private exchangeService: ExchangeIntegrationService;
 
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
+    this.exchangeService = new ExchangeIntegrationService(fastify);
     this.initializeAI();
   }
 
@@ -82,9 +86,11 @@ export class AISignalGenerator {
     const client = await this.fastify.pg.connect();
 
     try {
-      // Get all unique active coins
+      // Get all unique active coins with user preferences
       const watchlistResult = await client.query(
-        `SELECT DISTINCT coin_id, coin_symbol FROM watchlist WHERE is_active = true`
+        `SELECT DISTINCT w.coin_id, w.coin_symbol, w.user_id
+         FROM watchlist w
+         WHERE w.is_active = true`
       );
 
       if (watchlistResult.rows.length === 0) {
@@ -92,9 +98,11 @@ export class AISignalGenerator {
         return;
       }
 
+      // Get unique coin IDs
+      const allCoinIds = Array.from(new Set(watchlistResult.rows.map((row: any) => row.coin_id)));
+
       // Fetch market data
-      const coinIds = watchlistResult.rows.map((row: any) => row.coin_id);
-      const marketData = await coingeckoService.getCoinsMarkets(coinIds);
+      const marketData = await coingeckoService.getCoinsMarkets(allCoinIds);
 
       let totalTokensUsed = 0;
 
@@ -148,6 +156,30 @@ export class AISignalGenerator {
                 continue;
               }
 
+              // Check exchange compatibility
+              if (settings?.preferred_exchange) {
+                const isAvailable = await this.exchangeService.isCoinAvailable(
+                  settings.preferred_exchange,
+                  coin.id,
+                  true // Require futures availability
+                );
+                if (!isAvailable) {
+                  this.fastify.log.debug(
+                    `Skipping ${coin.symbol} for user ${user.user_id} - not available on ${settings.preferred_exchange}`
+                  );
+                  continue;
+                }
+              }
+
+              // Calculate futures position parameters
+              const futuresPosition = FuturesCalculator.calculatePosition({
+                signalType: signal.type,
+                currentPrice: coin.current_price,
+                technicalIndicators: signal.technicalIndicators,
+                confidence: signal.overallScore,
+                volatility: signal.technicalIndicators.atr,
+              });
+
               // Check for recent duplicates
               const recentSignal = await client.query(
                 `SELECT id FROM signals
@@ -161,23 +193,30 @@ export class AISignalGenerator {
               if (recentSignal.rows.length === 0 || signal.strength === 'STRONG') {
                 await client.query(
                   `INSERT INTO signals
-                   (user_id, coin_id, coin_symbol, signal_type, price, strength, indicators, message)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                   (user_id, coin_id, coin_symbol, signal_type, price, strength, indicators, message,
+                    position, leverage, entry_price, stop_loss, take_profit, risk_reward_ratio)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
                   [
                     user.user_id,
-                  coin.id,
-                  coin.symbol,
-                  signal.type,
-                  coin.current_price,
-                  signal.strength,
-                  JSON.stringify({
-                    ...signal.technicalIndicators,
-                    confluence: signal.technicalConfluence,
-                    overallScore: signal.overallScore,
-                    fundamentalScore: signal.fundamentalScore,
-                    aiRecommendation: signal.aiRecommendation,
-                  }),
-                  this.formatSignalMessage(coin, signal),
+                    coin.id,
+                    coin.symbol,
+                    signal.type,
+                    coin.current_price,
+                    signal.strength,
+                    JSON.stringify({
+                      ...signal.technicalIndicators,
+                      confluence: signal.technicalConfluence,
+                      overallScore: signal.overallScore,
+                      fundamentalScore: signal.fundamentalScore,
+                      aiRecommendation: signal.aiRecommendation,
+                    }),
+                    this.formatSignalMessage(coin, signal, futuresPosition),
+                    futuresPosition?.position,
+                    futuresPosition?.leverage,
+                    futuresPosition?.entry_price,
+                    futuresPosition?.stop_loss,
+                    futuresPosition?.take_profit,
+                    futuresPosition?.risk_reward_ratio,
                   ]
                 );
 
@@ -186,7 +225,7 @@ export class AISignalGenerator {
                 if (runInBackground && settings?.whatsapp_number) {
                   await sendWhatsAppNotification(this.fastify, {
                     phone: settings.whatsapp_number,
-                    message: this.formatSignalMessage(coin, signal),
+                    message: this.formatSignalMessage(coin, signal, futuresPosition),
                     apiKey: settings.whatsapp_api_key,
                   });
                 }
@@ -290,9 +329,9 @@ export class AISignalGenerator {
   }
 
   /**
-   * Format comprehensive signal message
+   * Format comprehensive signal message with futures parameters
    */
-  private formatSignalMessage(coin: any, signal: EnhancedSignal): string {
+  private formatSignalMessage(coin: any, signal: EnhancedSignal, futuresPosition?: any): string {
     const parts: string[] = [];
 
     parts.push(
@@ -303,16 +342,29 @@ export class AISignalGenerator {
 
     parts.push(`${signal.strength} ${signal.type} - ${signal.overallScore}% confidence`);
 
+    // Add futures parameters
+    if (futuresPosition) {
+      parts.push(
+        `${futuresPosition.position} ${futuresPosition.leverage}x | Entry: $${futuresPosition.entry_price.toFixed(
+          coin.current_price < 1 ? 6 : 2
+        )} | SL: $${futuresPosition.stop_loss.toFixed(
+          coin.current_price < 1 ? 6 : 2
+        )} | TP: $${futuresPosition.take_profit.toFixed(
+          coin.current_price < 1 ? 6 : 2
+        )} | R:R ${futuresPosition.risk_reward_ratio}:1`
+      );
+    }
+
     if (signal.aiInsight && signal.aiInsight !== 'AI analysis unavailable') {
       parts.push(`AI: ${signal.aiInsight}`);
     }
 
     if (signal.reasoning.length > 0) {
-      parts.push(`Signals: ${signal.reasoning.slice(0, 3).join(', ')}`);
+      parts.push(`Signals: ${signal.reasoning.slice(0, 2).join(', ')}`);
     }
 
     if (signal.riskFactors.length > 0) {
-      parts.push(`Risks: ${signal.riskFactors.join(', ')}`);
+      parts.push(`Risks: ${signal.riskFactors.slice(0, 2).join(', ')}`);
     }
 
     return parts.join(' | ');
