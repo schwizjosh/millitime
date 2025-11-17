@@ -1,10 +1,16 @@
 import { binanceService } from './binance';
 import { coingeckoService } from './coingecko';
+import { cryptocompareService } from './cryptocompare';
+import { krakenService } from './kraken';
 import { CandleData } from './technicalIndicators';
 
 /**
  * Hybrid candle data fetcher that tries multiple sources
- * Priority: Binance (15min) > CoinGecko market_chart (aggregated to 15min)
+ * Priority (2025 optimized for reliability):
+ * 1. CryptoCompare (100K free/month, no geo-blocking)
+ * 2. Kraken (unlimited free, no geo-blocking, US-friendly)
+ * 3. Binance (geo-blocked in US but kept as fallback)
+ * 4. CoinGecko (rate limited but universal fallback)
  */
 export class CandleDataFetcher {
   /**
@@ -74,7 +80,31 @@ export class CandleDataFetcher {
     coinSymbol: string,
     limit: number = 100
   ): Promise<CandleData[] | null> {
-    // Try Binance first (best for 15-minute data)
+    // 1. Try CryptoCompare first (100K free/month, reliable)
+    try {
+      const cryptoCompareCandles = await cryptocompareService.get15MinCandles(coinSymbol, limit);
+
+      if (cryptoCompareCandles && cryptoCompareCandles.length >= 50) {
+        console.log(`✅ Fetched ${cryptoCompareCandles.length} candles from CryptoCompare for ${coinSymbol}`);
+        return cryptoCompareCandles;
+      }
+    } catch (error: any) {
+      console.log(`CryptoCompare failed for ${coinSymbol}, trying Kraken...`);
+    }
+
+    // 2. Try Kraken (unlimited free, no geo-blocking)
+    try {
+      const krakenCandles = await krakenService.getOHLC(coinSymbol, 15, limit);
+
+      if (krakenCandles && krakenCandles.length >= 50) {
+        console.log(`✅ Fetched ${krakenCandles.length} candles from Kraken for ${coinSymbol}`);
+        return krakenCandles;
+      }
+    } catch (error: any) {
+      console.log(`Kraken failed for ${coinSymbol}, trying Binance...`);
+    }
+
+    // 3. Try Binance (geo-blocked in US but kept as fallback)
     try {
       const binanceCandles = await binanceService.get15MinCandlesByCoinId(
         coinId,
@@ -90,7 +120,7 @@ export class CandleDataFetcher {
       console.log(`Binance failed for ${coinSymbol}, trying CoinGecko...`);
     }
 
-    // Fallback to CoinGecko market_chart (5-min data aggregated to 15-min)
+    // 4. Final fallback: CoinGecko market_chart (5-min data aggregated to 15-min)
     try {
       const marketChart = await coingeckoService.getMarketChart(coinId, 1);
 
