@@ -478,50 +478,64 @@
   padding: 28px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   border: 1px solid #f3f4f6;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.ai-buttons {
+.ai-section-header {
   display: flex;
-  gap: 16px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
-.ai-btn {
-  flex: 1;
-  min-width: 200px;
-  padding: 16px 24px;
-  border-radius: 12px;
-  font-size: 15px;
+.ai-status {
+  font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.ai-status.active {
+  background: rgba(99, 102, 241, 0.12);
+  color: #4c1d95;
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.ai-status.inactive {
+  background: #f3f4f6;
+  color: #6b7280;
+  border-color: #e5e7eb;
+}
+
+.ai-toggle-card {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border: none;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px;
+  background: #f9fafb;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
 }
 
-.ai-btn.primary {
-  background: linear-gradient(135deg, #8b5cf6, #6366f1);
-  color: white;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+.ai-toggle-card h3 {
+  margin: 0 0 4px 0;
+  font-size: 18px;
 }
 
-.ai-btn.primary:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4);
+.ai-toggle-card p {
+  margin: 0;
+  color: #4b5563;
 }
 
-.ai-btn.secondary {
-  background: white;
-  color: #8b5cf6;
-  border: 2px solid #8b5cf6;
-}
-
-.ai-btn.secondary:hover {
-  background: #f5f3ff;
-  transform: translateY(-3px);
+.ai-helper-text {
+  font-size: 14px;
+  color: #4b5563;
+  margin: 0;
 }
 
 /* FA News Section - PRIORITY #3 */
@@ -772,6 +786,12 @@
   background: #fef2f2;
   color: #dc2626;
   border: 1px solid #fecaca;
+}
+
+.success-alert {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #6ee7b7;
 }
 
 /* Search Card */
@@ -1464,12 +1484,9 @@
     font-size: 24px;
   }
 
-  .ai-buttons {
+  .ai-toggle-card {
     flex-direction: column;
-  }
-
-  .ai-btn {
-    min-width: 100%;
+    align-items: flex-start;
   }
 
   .quick-stats {
