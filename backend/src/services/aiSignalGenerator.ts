@@ -10,6 +10,8 @@ import { technicalIndicatorService } from './technicalIndicators';
 import { AIProviderService } from './aiProvider';
 import { AITradingStrategyService, EnhancedSignal } from './aiTradingStrategy';
 import cron from 'node-cron';
+import { fetchTradingSettingsMap } from '../utils/tradingSettings';
+import { sendWhatsAppNotification } from './whatsappNotifier';
 
 export class AISignalGenerator {
   private fastify: FastifyInstance;
@@ -126,34 +128,43 @@ export class AISignalGenerator {
         // Generate enhanced signal
         const signal = await this.analyzeWithAI(coin, candles);
 
-        if (signal) {
-          totalTokensUsed += signal.tokensUsed || 0;
+          if (signal) {
+            totalTokensUsed += signal.tokensUsed || 0;
 
-          // Get users watching this coin
-          const usersResult = await client.query(
-            'SELECT user_id FROM watchlist WHERE coin_id = $1 AND is_active = true',
-            [coin.id]
-          );
+            // Get users watching this coin
+            const usersResult = await client.query(
+              'SELECT user_id FROM watchlist WHERE coin_id = $1 AND is_active = true',
+              [coin.id]
+            );
 
-          // Create signal for each user
-          for (const user of usersResult.rows) {
-            // Check for recent duplicates
-            const recentSignal = await client.query(
-              `SELECT id FROM signals
-               WHERE user_id = $1 AND coin_id = $2 AND signal_type = $3
-               AND created_at > NOW() - INTERVAL '15 minutes'
+            const userIds = usersResult.rows.map((row: any) => row.user_id);
+            const settingsMap = await fetchTradingSettingsMap(client, userIds);
+
+            // Create signal for each user
+            for (const user of usersResult.rows) {
+              const settings = settingsMap.get(user.user_id);
+              const algoEnabled = settings ? settings.algo_enabled !== false : true;
+              if (!algoEnabled) {
+                continue;
+              }
+
+              // Check for recent duplicates
+              const recentSignal = await client.query(
+                `SELECT id FROM signals
+                 WHERE user_id = $1 AND coin_id = $2 AND signal_type = $3
+                 AND created_at > NOW() - INTERVAL '15 minutes'
                ORDER BY created_at DESC LIMIT 1`,
               [user.user_id, coin.id, signal.type]
             );
 
-            // Create signal if no duplicate or if STRONG
-            if (recentSignal.rows.length === 0 || signal.strength === 'STRONG') {
-              await client.query(
-                `INSERT INTO signals
-                 (user_id, coin_id, coin_symbol, signal_type, price, strength, indicators, message)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                [
-                  user.user_id,
+              // Create signal if no duplicate or if STRONG
+              if (recentSignal.rows.length === 0 || signal.strength === 'STRONG') {
+                await client.query(
+                  `INSERT INTO signals
+                   (user_id, coin_id, coin_symbol, signal_type, price, strength, indicators, message)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                  [
+                    user.user_id,
                   coin.id,
                   coin.symbol,
                   signal.type,
@@ -167,10 +178,20 @@ export class AISignalGenerator {
                     aiRecommendation: signal.aiRecommendation,
                   }),
                   this.formatSignalMessage(coin, signal),
-                ]
-              );
+                  ]
+                );
+
+                // Send background WhatsApp notification if configured
+                const runInBackground = settings ? settings.run_in_background !== false : true;
+                if (runInBackground && settings?.whatsapp_number) {
+                  await sendWhatsAppNotification(this.fastify, {
+                    phone: settings.whatsapp_number,
+                    message: this.formatSignalMessage(coin, signal),
+                    apiKey: settings.whatsapp_api_key,
+                  });
+                }
+              }
             }
-          }
 
           this.fastify.log.info(
             `Generated ${signal.type} (${signal.strength}) for ${coin.symbol} - ` +

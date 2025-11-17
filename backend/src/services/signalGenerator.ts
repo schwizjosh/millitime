@@ -3,6 +3,8 @@ import { coingeckoService } from './coingecko';
 import { candleDataFetcher } from './candleDataFetcher';
 import { technicalIndicatorService, TechnicalIndicatorValues } from './technicalIndicators';
 import cron from 'node-cron';
+import { fetchTradingSettingsMap } from '../utils/tradingSettings';
+import { sendWhatsAppNotification } from './whatsappNotifier';
 
 interface TechnicalIndicators extends TechnicalIndicatorValues {
   priceChange24h: number;
@@ -101,8 +103,17 @@ export class SignalGenerator {
             [coin.id]
           );
 
+          const userIds = usersResult.rows.map((row: any) => row.user_id);
+          const settingsMap = await fetchTradingSettingsMap(client, userIds);
+
           // Create signal for each user (avoid duplicates within 15 minutes)
           for (const user of usersResult.rows) {
+            const settings = settingsMap.get(user.user_id);
+            const algoEnabled = settings ? settings.algo_enabled !== false : true;
+            if (!algoEnabled) {
+              continue;
+            }
+
             // Check if we already sent a similar signal in the last 15 minutes
             const recentSignal = await client.query(
               `SELECT id FROM signals
@@ -129,6 +140,16 @@ export class SignalGenerator {
                   signal.message,
                 ]
               );
+
+              // Send background WhatsApp notification if configured
+              const runInBackground = settings ? settings.run_in_background !== false : true;
+              if (runInBackground && settings?.whatsapp_number) {
+                await sendWhatsAppNotification(this.fastify, {
+                  phone: settings.whatsapp_number,
+                  message: signal.message,
+                  apiKey: settings.whatsapp_api_key,
+                });
+              }
             }
           }
 

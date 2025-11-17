@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { signalsAPI, type Signal } from '../services/api';
+import { signalsAPI, tradingAPI, type Signal, type TradingSettings } from '../services/api';
 import '../styles/Dashboard.css';
 
 interface NewsItem {
@@ -25,6 +25,9 @@ export default function Dashboard() {
   const [timezone] = useState(() => localStorage.getItem('timezone') || 'UTC');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [tradingSettings, setTradingSettings] = useState<TradingSettings | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [whatsappNumberInput, setWhatsappNumberInput] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -32,6 +35,7 @@ export default function Dashboard() {
       return;
     }
     loadDashboard();
+    loadTradingSettings();
 
     // Auto-refresh every 5 minutes
     const refreshInterval = setInterval(() => {
@@ -73,10 +77,61 @@ export default function Dashboard() {
     }
   };
 
+  const loadTradingSettings = async () => {
+    try {
+      const response = await tradingAPI.getSettings();
+      const settings = response.data.settings;
+      setTradingSettings(settings);
+      setWhatsappNumberInput(settings.whatsapp_number || '');
+    } catch (error) {
+      console.error('Failed to load trading settings:', error);
+    }
+  };
+
   const toggleAiEnhancements = () => {
     const newValue = !aiEnabled;
     setAiEnabled(newValue);
     localStorage.setItem('aiEnhancementsEnabled', newValue.toString());
+  };
+
+  const toggleAlgo = async () => {
+    if (!tradingSettings) return;
+    try {
+      setSettingsSaving(true);
+      const nextValue = !tradingSettings.algo_enabled;
+      const response = await tradingAPI.updateSettings({ algo_enabled: nextValue });
+      setTradingSettings(response.data.settings);
+    } catch (error) {
+      console.error('Failed to toggle algo:', error);
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const toggleBackground = async () => {
+    if (!tradingSettings) return;
+    try {
+      setSettingsSaving(true);
+      const nextValue = !tradingSettings.run_in_background;
+      const response = await tradingAPI.updateSettings({ run_in_background: nextValue });
+      setTradingSettings(response.data.settings);
+    } catch (error) {
+      console.error('Failed to toggle background:', error);
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const saveWhatsappNumber = async () => {
+    try {
+      setSettingsSaving(true);
+      const response = await tradingAPI.updateSettings({ whatsapp_number: whatsappNumberInput });
+      setTradingSettings(response.data.settings);
+    } catch (error) {
+      console.error('Failed to save WhatsApp number:', error);
+    } finally {
+      setSettingsSaving(false);
+    }
   };
 
   const formatDate = (timestamp: string) => {
@@ -191,6 +246,69 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="main-content">
+        <section className="trading-controls">
+          <div className="controls-left">
+            <div className="controls-header">
+              <h2>Active Trading</h2>
+              <p>Control the algo and background alerts for this account.</p>
+            </div>
+            <div className="control-row">
+              <div className="control-label">
+                <span className="control-title">Algo</span>
+                <small>Large on/off switch for live signal generation</small>
+              </div>
+              <button
+                className={`pill-toggle ${tradingSettings?.algo_enabled ? 'on' : 'off'}`}
+                onClick={toggleAlgo}
+                disabled={settingsSaving || !tradingSettings}
+              >
+                <span className="pill-thumb">{tradingSettings?.algo_enabled ? 'On' : 'Off'}</span>
+              </button>
+            </div>
+
+            <div className="control-row">
+              <div className="control-label">
+                <span className="control-title">Run in background</span>
+                <small>Keep WhatsApp alerts flowing even when the app is closed</small>
+              </div>
+              <label className="toggle-switch-minimal">
+                <input
+                  type="checkbox"
+                  checked={tradingSettings?.run_in_background ?? true}
+                  onChange={toggleBackground}
+                  disabled={settingsSaving || !tradingSettings}
+                />
+                <span className="toggle-slider-minimal"></span>
+              </label>
+            </div>
+          </div>
+
+          <div className="controls-right">
+            <div className="controls-header">
+              <h3>WhatsApp Alerts</h3>
+              <small>Uses Deluxe CRM messaging API</small>
+            </div>
+            <label className="input-label" htmlFor="whatsapp-number">Destination number</label>
+            <input
+              id="whatsapp-number"
+              type="tel"
+              placeholder="+15551234567"
+              value={whatsappNumberInput}
+              onChange={(e) => setWhatsappNumberInput(e.target.value)}
+            />
+            <button
+              className="save-button"
+              onClick={saveWhatsappNumber}
+              disabled={settingsSaving}
+            >
+              {settingsSaving ? 'Saving...' : 'Save & enable alerts'}
+            </button>
+            <p className="helper-text">
+              Notifications fire on signal changes. Set your Deluxe CRM API key in backend env or per-user settings.
+            </p>
+          </div>
+        </section>
+
         {/* Minimal Header with AI Toggle */}
         <header className="minimal-header">
           <button

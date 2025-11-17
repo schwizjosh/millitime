@@ -61,6 +61,16 @@ CREATE INDEX IF NOT EXISTS idx_signals_user_id ON signals(user_id);
 CREATE INDEX IF NOT EXISTS idx_signals_coin_id ON signals(coin_id);
 CREATE INDEX IF NOT EXISTS idx_signals_created_at ON signals(created_at);
 
+-- Trading settings per user (algo toggle, background, WhatsApp destination/API key)
+CREATE TABLE IF NOT EXISTS trading_settings (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  algo_enabled BOOLEAN DEFAULT true,
+  run_in_background BOOLEAN DEFAULT true,
+  whatsapp_number VARCHAR(32),
+  whatsapp_api_key TEXT,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -75,4 +85,7 @@ CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_watchlist_updated_at BEFORE UPDATE ON watchlist
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_trading_settings_updated_at BEFORE UPDATE ON trading_settings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

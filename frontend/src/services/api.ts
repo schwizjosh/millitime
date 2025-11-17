@@ -67,6 +67,14 @@ export interface Signal {
   created_at: string;
 }
 
+export interface TradingSettings {
+  algo_enabled: boolean;
+  run_in_background: boolean;
+  whatsapp_number: string | null;
+  whatsapp_api_key: string | null;
+  updated_at: string;
+}
+
 export interface CoinPrice {
   id: string;
   symbol: string;
@@ -126,6 +134,15 @@ export const signalsAPI = {
 
   getCoinSignals: (coinId: string) =>
     api.get<{ signals: Signal[] }>(`/api/signals/coin/${coinId}`),
+};
+
+// Trading settings APIs
+export const tradingAPI = {
+  getSettings: () =>
+    api.get<{ settings: TradingSettings }>('/api/trading/settings'),
+
+  updateSettings: (payload: Partial<TradingSettings>) =>
+    api.patch<{ settings: TradingSettings }>('/api/trading/settings', payload),
 };
 
 export default api;

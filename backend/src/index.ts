@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { authRoutes } from './routes/auth';
 import { watchlistRoutes } from './routes/watchlist';
 import { signalsRoutes } from './routes/signals';
+import { tradingRoutes } from './routes/trading';
 import { SignalGenerator } from './services/signalGenerator';
 import { AISignalGenerator } from './services/aiSignalGenerator';
 
@@ -64,6 +65,7 @@ fastify.get('/api/test-db', async (request, reply) => {
 fastify.register(authRoutes);
 fastify.register(watchlistRoutes);
 fastify.register(signalsRoutes);
+fastify.register(tradingRoutes);
 
 const start = async () => {
   try {

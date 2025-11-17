@@ -51,6 +51,15 @@ export interface JWTPayload {
   username: string;
 }
 
+export interface TradingSettings {
+  user_id: number;
+  algo_enabled: boolean;
+  run_in_background: boolean;
+  whatsapp_number: string | null;
+  whatsapp_api_key: string | null;
+  updated_at: Date;
+}
+
 export interface CoinGeckoMarketData {
   id: string;
   symbol: string;

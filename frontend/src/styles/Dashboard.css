@@ -24,6 +24,132 @@
   padding: 0;
 }
 
+.trading-controls {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1.25rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(8px);
+}
+
+.controls-left,
+.controls-right {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.controls-header h2,
+.controls-header h3 {
+  margin: 0;
+  color: white;
+}
+
+.controls-header p,
+.controls-header small {
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0;
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.control-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: white;
+}
+
+.control-title {
+  font-weight: 600;
+}
+
+.control-label small {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.pill-toggle {
+  position: relative;
+  min-width: 120px;
+  padding: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pill-toggle.on {
+  background: linear-gradient(135deg, #10b981, #22c55e);
+}
+
+.pill-toggle.off {
+  background: linear-gradient(135deg, #4b5563, #374151);
+}
+
+.pill-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pill-thumb {
+  display: inline-block;
+  min-width: 48px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.controls-right input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  color: white;
+  outline: none;
+}
+
+.controls-right input:focus {
+  border-color: #8b5cf6;
+}
+
+.save-button {
+  margin-top: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.75rem;
+  border: none;
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.save-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.helper-text,
+.input-label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0.25rem 0;
+}
+
 .column-title {
   font-size: 1.5rem;
   font-weight: 700;
@@ -243,6 +369,10 @@
 @media (max-width: 768px) {
   .dashboard-grid {
     gap: 1rem;
+  }
+
+  .trading-controls {
+    grid-template-columns: 1fr;
   }
 
   .signal-column,
