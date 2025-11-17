@@ -185,6 +185,26 @@ export class CoinGeckoService {
       return response.data;
     });
   }
+
+  /**
+   * Get detailed coin information including market data, supply info, etc.
+   * @param coinId - CoinGecko coin ID
+   */
+  async getCoinDetails(coinId: string): Promise<any> {
+    return this.queueRequest(async () => {
+      const response = await this.api.get(`/coins/${coinId}`, {
+        params: {
+          localization: false,
+          tickers: false,
+          market_data: true,
+          community_data: false,
+          developer_data: false,
+          sparkline: false,
+        },
+      });
+      return response.data;
+    });
+  }
 }
 
 // Export singleton instance
