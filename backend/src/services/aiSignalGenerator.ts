@@ -101,28 +101,30 @@ export class AISignalGenerator {
       // Get unique coin IDs
       const allCoinIds = Array.from(new Set(watchlistResult.rows.map((row: any) => row.coin_id))) as string[];
 
-      // Fetch market data
-      const marketData = await coingeckoService.getCoinsMarkets(allCoinIds);
+      // Fetch market data with fallback
+      let marketData: any[] = [];
+      try {
+        marketData = await coingeckoService.getCoinsMarkets(allCoinIds);
+      } catch (error: any) {
+        this.fastify.log.warn(
+          `CoinGecko market data unavailable (${error.message}), using watchlist data as fallback`
+        );
+        // Fallback: use watchlist data with latest price from candlestick data
+        marketData = watchlistResult.rows.map((row: any) => ({
+          id: row.coin_id,
+          symbol: row.coin_symbol.toLowerCase(),
+          current_price: 0, // Will be populated from candles
+          market_cap: 0,
+          total_volume: 0,
+          price_change_24h: 0,
+          price_change_percentage_24h: 0,
+        }));
+      }
 
       let totalTokensUsed = 0;
 
       for (const coin of marketData) {
-        // Store price history
-        await client.query(
-          `INSERT INTO price_history
-           (coin_id, price, market_cap, volume_24h, price_change_24h, price_change_percentage_24h)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
-            coin.id,
-            coin.current_price,
-            coin.market_cap,
-            coin.total_volume,
-            coin.price_change_24h,
-            coin.price_change_percentage_24h,
-          ]
-        );
-
-        // Get candlestick data
+        // Get candlestick data FIRST (so we can populate price if needed)
         const coinSymbol = coin.symbol.toUpperCase();
         const candles = await candleDataFetcher.fetch15MinCandles(coin.id, coinSymbol, 100);
 
@@ -131,6 +133,32 @@ export class AISignalGenerator {
             `Not enough candlestick data for ${coin.symbol}, skipping`
           );
           continue;
+        }
+
+        // If we're using fallback data, populate current_price from latest candle
+        if (coin.current_price === 0 && candles.length > 0) {
+          coin.current_price = candles[candles.length - 1].close;
+          // Calculate 24h change from candles (96 15-min candles = 24 hours)
+          const candles24hAgo = candles.length >= 96 ? candles[candles.length - 96] : candles[0];
+          coin.price_change_24h = coin.current_price - candles24hAgo.close;
+          coin.price_change_percentage_24h = ((coin.current_price - candles24hAgo.close) / candles24hAgo.close) * 100;
+        }
+
+        // Store price history (skip if price is still 0)
+        if (coin.current_price > 0) {
+          await client.query(
+            `INSERT INTO price_history
+             (coin_id, price, market_cap, volume_24h, price_change_24h, price_change_percentage_24h)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [
+              coin.id,
+              coin.current_price,
+              coin.market_cap,
+              coin.total_volume,
+              coin.price_change_24h,
+              coin.price_change_percentage_24h,
+            ]
+          );
         }
 
         // Generate enhanced signal
