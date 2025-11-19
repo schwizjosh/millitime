@@ -4,6 +4,7 @@ import { TradingSettings } from '../types';
 
 interface UpdateTradingSettingsBody {
   algo_enabled?: boolean;
+  ai_enabled?: boolean;
   run_in_background?: boolean;
   whatsapp_number?: string | null;
   whatsapp_api_key?: string | null;
@@ -20,7 +21,7 @@ export async function tradingRoutes(fastify: FastifyInstance) {
 
     try {
       const result = await client.query<TradingSettings>(
-        `SELECT user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
+        `SELECT user_id, algo_enabled, ai_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
                 preferred_exchange, exchange_api_key, exchange_api_secret, updated_at
          FROM trading_settings
          WHERE user_id = $1`,
@@ -29,9 +30,9 @@ export async function tradingRoutes(fastify: FastifyInstance) {
 
       if (result.rows.length === 0) {
         const insertResult = await client.query<TradingSettings>(
-          `INSERT INTO trading_settings (user_id, algo_enabled, run_in_background, preferred_exchange)
-           VALUES ($1, true, true, 'binance')
-           RETURNING user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
+          `INSERT INTO trading_settings (user_id, algo_enabled, ai_enabled, run_in_background, preferred_exchange)
+           VALUES ($1, false, false, true, 'binance')
+           RETURNING user_id, algo_enabled, ai_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
                      preferred_exchange, exchange_api_key, exchange_api_secret, updated_at`,
           [userId]
         );
@@ -55,6 +56,7 @@ export async function tradingRoutes(fastify: FastifyInstance) {
       const userId = request.user!.id;
       const {
         algo_enabled,
+        ai_enabled,
         run_in_background,
         whatsapp_number,
         whatsapp_api_key,
@@ -65,6 +67,10 @@ export async function tradingRoutes(fastify: FastifyInstance) {
 
       if (algo_enabled !== undefined && typeof algo_enabled !== 'boolean') {
         return reply.code(400).send({ error: 'algo_enabled must be boolean' });
+      }
+
+      if (ai_enabled !== undefined && typeof ai_enabled !== 'boolean') {
+        return reply.code(400).send({ error: 'ai_enabled must be boolean' });
       }
 
       if (run_in_background !== undefined && typeof run_in_background !== 'boolean') {
@@ -82,23 +88,25 @@ export async function tradingRoutes(fastify: FastifyInstance) {
       try {
         const result = await client.query<TradingSettings>(
           `INSERT INTO trading_settings
-           (user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
+           (user_id, algo_enabled, ai_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
             preferred_exchange, exchange_api_key, exchange_api_secret)
-           VALUES ($1, COALESCE($2, true), COALESCE($3, true), $4, $5, $6, $7, $8)
+           VALUES ($1, COALESCE($2, false), COALESCE($3, false), COALESCE($4, true), $5, $6, $7, $8, $9)
            ON CONFLICT (user_id) DO UPDATE
              SET algo_enabled = COALESCE($2, trading_settings.algo_enabled),
-                 run_in_background = COALESCE($3, trading_settings.run_in_background),
-                 whatsapp_number = COALESCE($4, trading_settings.whatsapp_number),
-                 whatsapp_api_key = COALESCE($5, trading_settings.whatsapp_api_key),
-                 preferred_exchange = COALESCE($6, trading_settings.preferred_exchange),
-                 exchange_api_key = COALESCE($7, trading_settings.exchange_api_key),
-                 exchange_api_secret = COALESCE($8, trading_settings.exchange_api_secret),
+                 ai_enabled = COALESCE($3, trading_settings.ai_enabled),
+                 run_in_background = COALESCE($4, trading_settings.run_in_background),
+                 whatsapp_number = COALESCE($5, trading_settings.whatsapp_number),
+                 whatsapp_api_key = COALESCE($6, trading_settings.whatsapp_api_key),
+                 preferred_exchange = COALESCE($7, trading_settings.preferred_exchange),
+                 exchange_api_key = COALESCE($8, trading_settings.exchange_api_key),
+                 exchange_api_secret = COALESCE($9, trading_settings.exchange_api_secret),
                  updated_at = CURRENT_TIMESTAMP
-           RETURNING user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
+           RETURNING user_id, algo_enabled, ai_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
                      preferred_exchange, exchange_api_key, exchange_api_secret, updated_at`,
           [
             userId,
             algo_enabled,
+            ai_enabled,
             run_in_background,
             sanitizedNumber,
             sanitizedWhatsAppKey,

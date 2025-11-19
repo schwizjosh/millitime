@@ -13,7 +13,7 @@ export async function fetchTradingSettingsMap(
   }
 
   const result = await client.query<TradingSettings>(
-    `SELECT user_id, algo_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
+    `SELECT user_id, algo_enabled, ai_enabled, run_in_background, whatsapp_number, whatsapp_api_key,
             preferred_exchange, exchange_api_key, exchange_api_secret, updated_at
      FROM trading_settings
      WHERE user_id = ANY($1::int[])`,

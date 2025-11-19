@@ -76,6 +76,7 @@ export interface Signal {
 
 export interface TradingSettings {
   algo_enabled: boolean;
+  ai_enabled: boolean;
   run_in_background: boolean;
   whatsapp_number: string | null;
   whatsapp_api_key: string | null;

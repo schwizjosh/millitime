@@ -161,20 +161,25 @@ export class AISignalGenerator {
           );
         }
 
-        // Generate enhanced signal
-        const signal = await this.analyzeWithAI(coin, candles);
+        // Get users watching this coin FIRST to check their AI preferences
+        const usersResult = await client.query(
+          'SELECT user_id FROM watchlist WHERE coin_id = $1 AND is_active = true',
+          [coin.id]
+        );
+
+        const userIds = usersResult.rows.map((row: any) => row.user_id);
+        const settingsMap = await fetchTradingSettingsMap(client, userIds);
+
+        // Check if ANY user has AI enabled for this coin
+        const anyUserWithAI = Array.from(settingsMap.values()).some(
+          (s) => s.algo_enabled !== false && s.ai_enabled === true
+        );
+
+        // Generate signal with AI only if at least one user wants it
+        const signal = await this.analyzeWithAI(coin, candles, anyUserWithAI);
 
           if (signal) {
             totalTokensUsed += signal.tokensUsed || 0;
-
-            // Get users watching this coin
-            const usersResult = await client.query(
-              'SELECT user_id FROM watchlist WHERE coin_id = $1 AND is_active = true',
-              [coin.id]
-            );
-
-            const userIds = usersResult.rows.map((row: any) => row.user_id);
-            const settingsMap = await fetchTradingSettingsMap(client, userIds);
 
             // Create signal for each user
             for (const user of usersResult.rows) {
@@ -303,10 +308,11 @@ export class AISignalGenerator {
    */
   private async analyzeWithAI(
     coin: any,
-    candles: any[]
+    candles: any[],
+    useAI: boolean = false
   ): Promise<EnhancedSignal | null> {
-    // If AI is enabled, use enhanced strategy
-    if (this.aiEnabled && this.aiStrategy) {
+    // If AI is enabled globally AND requested by user, use enhanced strategy
+    if (this.aiEnabled && this.aiStrategy && useAI) {
       try {
         const enhancedSignal = await this.aiStrategy.generateEnhancedSignal(
           coin.id,
