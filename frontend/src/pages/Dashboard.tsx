@@ -13,7 +13,7 @@ export default function Dashboard() {
   const [aiEnabled, setAiEnabled] = useState(() => {
     return localStorage.getItem('aiEnhancementsEnabled') !== 'false';
   });
-  const [timezone] = useState(() => localStorage.getItem('timezone') || 'UTC');
+  const [timezone] = useState(() => localStorage.getItem('timezone') || 'Africa/Lagos');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 

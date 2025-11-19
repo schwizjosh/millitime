@@ -136,20 +136,20 @@ export default function SignalsHistory() {
                     <div className="futures-details">
                       <div className="futures-item">
                         <span>Entry:</span>
-                        <strong>${signal.entry_price?.toFixed(signal.entry_price < 1 ? 6 : 2)}</strong>
+                        <strong>${signal.entry_price ? Number(signal.entry_price).toFixed(Number(signal.entry_price) < 1 ? 6 : 2) : 'N/A'}</strong>
                       </div>
                       <div className="futures-item">
                         <span>Stop Loss:</span>
-                        <strong className="text-red">${signal.stop_loss?.toFixed(signal.stop_loss && signal.stop_loss < 1 ? 6 : 2)}</strong>
+                        <strong className="text-red">${signal.stop_loss ? Number(signal.stop_loss).toFixed(Number(signal.stop_loss) < 1 ? 6 : 2) : 'N/A'}</strong>
                       </div>
                       <div className="futures-item">
                         <span>Take Profit:</span>
-                        <strong className="text-green">${signal.take_profit?.toFixed(signal.take_profit && signal.take_profit < 1 ? 6 : 2)}</strong>
+                        <strong className="text-green">${signal.take_profit ? Number(signal.take_profit).toFixed(Number(signal.take_profit) < 1 ? 6 : 2) : 'N/A'}</strong>
                       </div>
                       {signal.risk_reward_ratio && (
                         <div className="futures-item">
                           <span>R:R Ratio:</span>
-                          <strong>1:{signal.risk_reward_ratio.toFixed(1)}</strong>
+                          <strong>1:{Number(signal.risk_reward_ratio).toFixed(1)}</strong>
                         </div>
                       )}
                     </div>
