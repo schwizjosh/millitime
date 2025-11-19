@@ -86,14 +86,20 @@ export default function Settings() {
   }, [pushNotifications]);
 
   useEffect(() => {
-    loadTradingSettings();
-    loadExchanges();
+    loadInitialData();
   }, []);
 
-  const loadTradingSettings = async () => {
+  const loadInitialData = async () => {
+    setLoading(true);
     try {
-      const response = await tradingAPI.getSettings();
-      const settings = response.data.settings;
+      // Parallelize settings and exchanges loading for better performance
+      const [settingsResponse, exchangesResponse] = await Promise.all([
+        tradingAPI.getSettings(),
+        tradingAPI.getExchanges(),
+      ]);
+
+      // Apply trading settings
+      const settings = settingsResponse.data.settings;
       setAlgoEnabled(settings.algo_enabled);
       setRunInBackground(settings.run_in_background);
       setWhatsappNumber(settings.whatsapp_number || '');
@@ -101,17 +107,13 @@ export default function Settings() {
       setPreferredExchange(settings.preferred_exchange || 'binance');
       setExchangeApiKey(settings.exchange_api_key || '');
       setExchangeApiSecret(settings.exchange_api_secret || '');
-    } catch (error) {
-      console.error('Failed to load trading settings:', error);
-    }
-  };
 
-  const loadExchanges = async () => {
-    try {
-      const response = await tradingAPI.getExchanges();
-      setExchanges(response.data.exchanges);
+      // Apply exchanges
+      setExchanges(exchangesResponse.data.exchanges);
     } catch (error) {
-      console.error('Failed to load exchanges:', error);
+      console.error('Failed to load settings:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -144,6 +146,17 @@ export default function Settings() {
     <Layout>
       <div className="settings-container">
         <h1>Settings</h1>
+
+        {loading && (
+          <div style={{
+            padding: '20px',
+            textAlign: 'center',
+            color: '#6b7280',
+            fontSize: '14px'
+          }}>
+            Loading settings...
+          </div>
+        )}
 
         <div className="settings-section">
           <h2>Appearance</h2>

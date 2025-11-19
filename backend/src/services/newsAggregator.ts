@@ -70,13 +70,13 @@ export class NewsAggregator {
     console.log(`🔄 Aggregating social metrics for ${coinSymbols.length} coins...`);
 
     try {
-      // Get social metrics from LunarCrush
-      const lunarMetrics = await lunarCrushService.getBulkSocialMetrics(coinSymbols);
-
-      // Get Reddit metrics for each coin
-      const redditMetrics = await Promise.allSettled(
-        coinSymbols.map((symbol) => redditService.getSocialMetrics(symbol))
-      );
+      // Parallelize LunarCrush and Reddit metrics fetching for better performance
+      const [lunarMetrics, redditMetrics] = await Promise.all([
+        lunarCrushService.getBulkSocialMetrics(coinSymbols),
+        Promise.allSettled(
+          coinSymbols.map((symbol) => redditService.getSocialMetrics(symbol))
+        ),
+      ]);
 
       // Combine and save metrics
       let savedCount = 0;
@@ -92,7 +92,7 @@ export class NewsAggregator {
         }
       }
 
-      console.log(`💾 Saved social metrics for ${savedCount} coins`);
+      console.log(`💾 Saved social metrics for ${savedCount} coins (parallel)`);
     } catch (error: any) {
       console.error('❌ Social metrics aggregation failed:', error);
     }
