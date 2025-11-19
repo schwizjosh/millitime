@@ -64,8 +64,8 @@ export class AISignalGenerator {
       return;
     }
 
-    // Run every 15 minutes (at :00, :15, :30, :45)
-    cron.schedule('*/15 * * * *', async () => {
+    // Run every 5 minutes for responsive crypto trading signals
+    cron.schedule('*/5 * * * *', async () => {
       this.fastify.log.info('Running AI-enhanced signal generation...');
       await this.generateSignals();
     });
