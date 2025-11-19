@@ -186,21 +186,32 @@ export async function watchlistRoutes(fastify: FastifyInstance) {
         throw apiError;
       }
 
-      // Store prices in price_history table
-      for (const coin of marketData) {
+      // Bulk insert prices into price_history table (much faster than individual inserts)
+      if (marketData.length > 0) {
+        const priceHistoryValues = marketData
+          .map(
+            (coin: any, index: number) =>
+              `($${index * 6 + 1}, $${index * 6 + 2}, $${index * 6 + 3}, $${index * 6 + 4}, $${index * 6 + 5}, $${index * 6 + 6})`
+          )
+          .join(', ');
+
+        const priceHistoryParams = marketData.flatMap((coin: any) => [
+          coin.id,
+          coin.current_price,
+          coin.market_cap,
+          coin.total_volume,
+          coin.price_change_24h,
+          coin.price_change_percentage_24h,
+        ]);
+
         await client.query(
           `INSERT INTO price_history
            (coin_id, price, market_cap, volume_24h, price_change_24h, price_change_percentage_24h)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
-            coin.id,
-            coin.current_price,
-            coin.market_cap,
-            coin.total_volume,
-            coin.price_change_24h,
-            coin.price_change_percentage_24h,
-          ]
+           VALUES ${priceHistoryValues}`,
+          priceHistoryParams
         );
+
+        fastify.log.info(`Bulk inserted price history for ${marketData.length} coins (watchlist)`);
       }
 
       return reply.send({ prices: marketData });

@@ -64,23 +64,28 @@ export class SpotlightCoinsDiscoveryService {
     const discoveredCoins: DiscoveredCoin[] = [];
 
     try {
-      // 1. Get CoinGecko trending coins
-      const trendingCoins = await this.getCoinGeckoTrending();
-      discoveredCoins.push(...trendingCoins);
+      // Parallelize all discovery methods for better performance
+      const discoveryPromises = [
+        this.getCoinGeckoTrending(),
+        this.getTopGainers(),
+        this.getHighVolumeCoins(),
+      ];
 
-      // 2. Get top gainers (24h price change)
-      const gainers = await this.getTopGainers();
-      discoveredCoins.push(...gainers);
-
-      // 3. Get high volume coins (potential breakouts)
-      const highVolumeCoins = await this.getHighVolumeCoins();
-      discoveredCoins.push(...highVolumeCoins);
-
-      // 4. AI-powered news sentiment analysis (if available)
+      // Add AI-powered news analysis if available
       if (this.aiProvider) {
-        const newsCoins = await this.getNewsBasedCoins();
-        discoveredCoins.push(...newsCoins);
+        discoveryPromises.push(this.getNewsBasedCoins());
       }
+
+      const results = await Promise.allSettled(discoveryPromises);
+
+      // Collect all successful results
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          discoveredCoins.push(...result.value);
+        }
+      }
+
+      this.fastify.log.info(`Discovered ${discoveredCoins.length} coins from ${results.length} sources (parallel)`);
 
       // Remove duplicates and sort by trending score
       const uniqueCoins = this.deduplicateAndScore(discoveredCoins);

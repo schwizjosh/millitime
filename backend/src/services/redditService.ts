@@ -54,34 +54,42 @@ export class RedditService {
   };
 
   async fetchHotPosts(limit: number = 25): Promise<NewsArticle[]> {
-    const allArticles: NewsArticle[] = [];
-
-    for (const subreddit of this.subreddits) {
+    // Parallelize subreddit fetches for better performance
+    const promises = this.subreddits.map(async (subreddit) => {
       try {
-        const posts = await this.fetchSubreddit(subreddit, 'hot', limit);
-        allArticles.push(...posts);
+        return await this.fetchSubreddit(subreddit, 'hot', limit);
       } catch (error: any) {
         console.error(`Reddit ${subreddit} error:`, error.message);
+        return [];
       }
-    }
+    });
 
-    console.log(`Reddit: Fetched ${allArticles.length} hot posts`);
+    const results = await Promise.allSettled(promises);
+    const allArticles = results
+      .filter((result) => result.status === 'fulfilled')
+      .flatMap((result) => (result as PromiseFulfilledResult<NewsArticle[]>).value);
+
+    console.log(`Reddit: Fetched ${allArticles.length} hot posts (parallel)`);
     return allArticles;
   }
 
   async fetchTopPosts(timeframe: 'hour' | 'day' | 'week' = 'day', limit: number = 25): Promise<NewsArticle[]> {
-    const allArticles: NewsArticle[] = [];
-
-    for (const subreddit of this.subreddits) {
+    // Parallelize subreddit fetches for better performance
+    const promises = this.subreddits.map(async (subreddit) => {
       try {
-        const posts = await this.fetchSubreddit(subreddit, 'top', limit, timeframe);
-        allArticles.push(...posts);
+        return await this.fetchSubreddit(subreddit, 'top', limit, timeframe);
       } catch (error: any) {
         console.error(`Reddit ${subreddit} error:`, error.message);
+        return [];
       }
-    }
+    });
 
-    console.log(`Reddit Top: Fetched ${allArticles.length} posts`);
+    const results = await Promise.allSettled(promises);
+    const allArticles = results
+      .filter((result) => result.status === 'fulfilled')
+      .flatMap((result) => (result as PromiseFulfilledResult<NewsArticle[]>).value);
+
+    console.log(`Reddit Top: Fetched ${allArticles.length} posts (parallel)`);
     return allArticles;
   }
 
