@@ -230,49 +230,124 @@ export class AITradingStrategyService {
     overrideStrength?: 'STRONG' | 'MODERATE' | 'WEAK';
     tokensUsed: number;
   }> {
-    // Build ultra-compact summary
-    const taSummary = `${technicalSignal.type}(${technicalSignal.confidence}%)`;
-    const faSummary = fundamentalScore
-      ? `${fundamentalScore.recommendation}(${fundamentalScore.overallScore})`
-      : 'N/A';
+    // Build comprehensive context with all available data
+    const indicators = technicalSignal.indicators;
+
+    // Format technical data
+    const technicalContext = `
+TECHNICAL ANALYSIS (${technicalSignal.confidence}% confidence):
+Signal: ${technicalSignal.type}
+Strength: ${technicalSignal.strength}
+
+Key Indicators:
+- RSI: ${indicators.rsi?.toFixed(2) || 'N/A'} ${this.getRSIInterpretation(indicators.rsi)}
+- MACD: ${indicators.macd?.MACD?.toFixed(2) || 'N/A'} (Signal: ${indicators.macd?.signal?.toFixed(2) || 'N/A'}) ${this.getMACDInterpretation(indicators.macd)}
+- Volume: ${indicators.volume24h ? `${(indicators.volume24h / 1e9).toFixed(2)}B` : 'N/A'} ${indicators.volumeChange ? `(${indicators.volumeChange > 0 ? '+' : ''}${indicators.volumeChange.toFixed(1)}% vs avg)` : ''}
+- ATR (Volatility): ${indicators.atr?.toFixed(2) || 'N/A'}
+- Bollinger Bands: Price ${indicators.bollingerBands?.position || 'N/A'}
+- SMA Trend: ${this.getSMATrend(indicators)}
+
+Confluence Score: ${technicalSignal.confidence}%
+Detected Signals: ${technicalSignal.signals?.join(', ') || 'None'}`;
+
+    // Format fundamental data
+    const fundamentalContext = fundamentalScore ? `
+
+FUNDAMENTAL ANALYSIS (${fundamentalScore.overallScore}% score):
+Recommendation: ${fundamentalScore.recommendation}
+Confidence: ${fundamentalScore.confidence}%
+
+Breakdown:
+- Market Position: ${fundamentalScore.marketPosition}/100
+- Volume Health: ${fundamentalScore.volumeHealth}/100
+- Supply Dynamics: ${fundamentalScore.supplyDynamics}/100
+- Price Action: ${fundamentalScore.priceAction}/100
+
+Key Factors: ${fundamentalScore.keyFactors?.join(', ') || 'N/A'}
+AI Insight: ${fundamentalScore.aiInsight || 'N/A'}` : `
+
+FUNDAMENTAL ANALYSIS: Not available`;
 
     const messages: AIMessage[] = [
       {
         role: 'system',
-        content: 'You are an expert crypto trader. Provide decisive, concise analysis. Format: [RECOMMENDATION]|[1-2 sentence reason]|[OVERRIDE:YES/NO]',
+        content: `You are an expert cryptocurrency trading analyst with deep expertise in technical and fundamental analysis.
+
+Analyze trading signals using a rigorous step-by-step methodology:
+
+STEP 1 - TECHNICAL ANALYSIS REVIEW:
+Evaluate the technical indicators for trend strength, momentum, and reliability. Consider confluence of multiple indicators.
+
+STEP 2 - FUNDAMENTAL ANALYSIS REVIEW:
+Assess market positioning, liquidity, and underlying fundamentals. Identify any red flags or strong positives.
+
+STEP 3 - CONFLICT RESOLUTION:
+If technical and fundamental signals conflict, determine which has stronger evidence and why.
+
+STEP 4 - RISK ASSESSMENT:
+Identify the primary risks to this trade (volatility, liquidity, market conditions, etc.).
+
+STEP 5 - FINAL RECOMMENDATION:
+Synthesize all factors into a clear recommendation with confidence level.
+
+RESPONSE FORMAT (strictly follow):
+RECOMMENDATION: [STRONG_BUY/BUY/HOLD/SELL/STRONG_SELL]
+CONFIDENCE: [0-100]%
+REASONING: [2-3 concise bullet points explaining the decision]
+PRIMARY_RISK: [One key risk factor]
+OVERRIDE: [YES/NO - YES only if you have high confidence this decision is better than the technical signal]`,
       },
       {
         role: 'user',
-        content: `${coinSymbol} $${currentPrice}\nTA:${taSummary} FA:${faSummary}\nSignals:${technicalSignal.signals?.slice(0, 3).join(';') || 'none'}\n\nDecision:`,
+        content: `Analyze ${coinSymbol} @ $${currentPrice.toFixed(currentPrice < 1 ? 6 : 2)}
+${technicalContext}${fundamentalContext}
+
+Provide your step-by-step analysis and recommendation:`,
       },
     ];
 
     const response = await this.aiProvider.complete(messages, {
-      maxTokens: maxTokens || 200,
-      taskComplexity: 'complex', // Use Claude for nuanced decisions
+      maxTokens: maxTokens || 800, // Increased for detailed CoT reasoning
+      taskComplexity: 'complex', // Use Claude Sonnet 4.5 for nuanced decisions
     });
 
-    // Parse response
-    const parts = response.content.split('|');
-    const recText = parts[0]?.trim().toUpperCase() || 'HOLD';
-    const insight = parts[1]?.trim() || response.content;
-    const shouldOverride = parts[2]?.includes('YES') || false;
+    // Parse structured response
+    const content = response.content;
 
-    let recommendation: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' = 'HOLD';
+    // Extract recommendation
+    const recMatch = content.match(/RECOMMENDATION:\s*(STRONG_BUY|BUY|HOLD|SELL|STRONG_SELL)/i);
+    const recommendation: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' =
+      (recMatch?.[1]?.toUpperCase().replace(' ', '_') as any) || 'HOLD';
+
+    // Extract confidence
+    const confMatch = content.match(/CONFIDENCE:\s*(\d+)/);
+    const aiConfidence = confMatch ? parseInt(confMatch[1]) : 50;
+
+    // Extract reasoning
+    const reasonMatch = content.match(/REASONING:\s*(.+?)(?=PRIMARY_RISK:|OVERRIDE:|$)/s);
+    const reasoning = reasonMatch?.[1]?.trim() || content.substring(0, 200);
+
+    // Extract primary risk
+    const riskMatch = content.match(/PRIMARY_RISK:\s*(.+?)(?=OVERRIDE:|$)/s);
+    const primaryRisk = riskMatch?.[1]?.trim() || 'Market volatility';
+
+    // Extract override decision
+    const overrideMatch = content.match(/OVERRIDE:\s*(YES|NO)/i);
+    const shouldOverride = overrideMatch?.[1]?.toUpperCase() === 'YES';
+
+    // Combine reasoning and risk into insight
+    const insight = `${reasoning}\n\nPrimary Risk: ${primaryRisk}`;
+
+    // Determine override strength based on confidence
     let overrideStrength: 'STRONG' | 'MODERATE' | 'WEAK' | undefined;
-
-    if (recText.includes('STRONG_BUY') || recText.includes('STRONG BUY')) {
-      recommendation = 'STRONG_BUY';
-      overrideStrength = 'STRONG';
-    } else if (recText.includes('BUY')) {
-      recommendation = 'BUY';
-      overrideStrength = 'MODERATE';
-    } else if (recText.includes('STRONG_SELL') || recText.includes('STRONG SELL')) {
-      recommendation = 'STRONG_SELL';
-      overrideStrength = 'STRONG';
-    } else if (recText.includes('SELL')) {
-      recommendation = 'SELL';
-      overrideStrength = 'MODERATE';
+    if (shouldOverride) {
+      if (aiConfidence >= 80) {
+        overrideStrength = 'STRONG';
+      } else if (aiConfidence >= 60) {
+        overrideStrength = 'MODERATE';
+      } else {
+        overrideStrength = 'WEAK';
+      }
     }
 
     return {
@@ -395,5 +470,50 @@ export class AITradingStrategyService {
     }
 
     return risks.slice(0, 4);
+  }
+
+  /**
+   * Helper: Interpret RSI value
+   */
+  private getRSIInterpretation(rsi: number | undefined): string {
+    if (!rsi) return '';
+    if (rsi > 70) return '(Overbought)';
+    if (rsi < 30) return '(Oversold)';
+    if (rsi > 60) return '(Bullish momentum)';
+    if (rsi < 40) return '(Bearish momentum)';
+    return '(Neutral)';
+  }
+
+  /**
+   * Helper: Interpret MACD
+   */
+  private getMACDInterpretation(macd: any): string {
+    if (!macd || !macd.MACD || !macd.signal) return '';
+    const diff = macd.MACD - macd.signal;
+    if (diff > 0 && macd.MACD > 0) return '(Bullish crossover)';
+    if (diff > 0 && macd.MACD < 0) return '(Weakening bearish)';
+    if (diff < 0 && macd.MACD > 0) return '(Weakening bullish)';
+    if (diff < 0 && macd.MACD < 0) return '(Bearish crossover)';
+    return '';
+  }
+
+  /**
+   * Helper: Get SMA trend interpretation
+   */
+  private getSMATrend(indicators: any): string {
+    const sma20 = indicators.sma20;
+    const sma50 = indicators.sma50;
+    const sma200 = indicators.sma200;
+
+    if (!sma20 || !sma50) return 'N/A';
+
+    const trends: string[] = [];
+    if (sma20 > sma50) trends.push('SMA20>SMA50 (Bullish)');
+    else trends.push('SMA20<SMA50 (Bearish)');
+
+    if (sma200 && sma50 > sma200) trends.push('SMA50>SMA200 (Long-term bullish)');
+    else if (sma200) trends.push('SMA50<SMA200 (Long-term bearish)');
+
+    return trends.join(', ');
   }
 }

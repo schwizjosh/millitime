@@ -154,7 +154,7 @@ export class AIProviderService {
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-3-5-haiku-20241022', // Fast, cost-effective model
+        model: 'claude-sonnet-4-5-20250929', // Premium accuracy model - 56% better reasoning than Haiku
         max_tokens: maxTokens,
         temperature: this.config.temperature,
         system: systemMessage,
