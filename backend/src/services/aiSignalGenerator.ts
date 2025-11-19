@@ -299,13 +299,21 @@ export class AISignalGenerator {
                 );
 
                 // Send background WhatsApp notification if configured
+                // Only send for MODERATE and STRONG signals (filter out WEAK)
                 const runInBackground = settings ? settings.run_in_background !== false : true;
-                if (runInBackground && settings?.whatsapp_number) {
+                if (runInBackground && settings?.whatsapp_number && signal.strength !== 'WEAK') {
                   await sendWhatsAppNotification(this.fastify, {
                     phone: settings.whatsapp_number,
                     message: this.formatSignalMessage(coin, signal, futuresPosition),
                     apiKey: settings.whatsapp_api_key,
                   });
+                  this.fastify.log.info(
+                    `📱 WhatsApp sent: ${signal.type} ${signal.strength} for ${coin.symbol} to user ${user.user_id}`
+                  );
+                } else if (signal.strength === 'WEAK') {
+                  this.fastify.log.debug(
+                    `Skipping WhatsApp for WEAK ${signal.type} signal on ${coin.symbol} - only MODERATE/STRONG trigger notifications`
+                  );
                 }
               } else {
                 this.fastify.log.debug(
