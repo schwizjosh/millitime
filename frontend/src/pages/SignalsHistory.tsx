@@ -7,7 +7,8 @@ export default function SignalsHistory() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'ALL' | 'BUY' | 'SELL' | 'HOLD'>('ALL');
-  const [timezone] = useState(() => localStorage.getItem('timezone') || 'UTC');
+  // Force timezone to UTC+2 (WAT+1) - Africa/Cairo
+  const [timezone] = useState(() => localStorage.getItem('timezone') || 'Africa/Cairo');
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   useEffect(() => {

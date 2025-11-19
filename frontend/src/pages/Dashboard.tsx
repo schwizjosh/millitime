@@ -13,7 +13,8 @@ export default function Dashboard() {
   const [aiEnabled, setAiEnabled] = useState(() => {
     return localStorage.getItem('aiEnhancementsEnabled') !== 'false';
   });
-  const [timezone] = useState(() => localStorage.getItem('timezone') || 'Africa/Lagos');
+  // Force timezone to UTC+2 (WAT+1) - Africa/Cairo
+  const [timezone] = useState(() => localStorage.getItem('timezone') || 'Africa/Cairo');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
