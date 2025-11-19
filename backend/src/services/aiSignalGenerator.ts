@@ -11,6 +11,7 @@ import { AIProviderService } from './aiProvider';
 import { AITradingStrategyService, EnhancedSignal } from './aiTradingStrategy';
 import { FuturesCalculator } from './futuresCalculator';
 import { ExchangeIntegrationService } from './exchangeIntegration';
+import { PositionTrackerService } from './positionTracker';
 import cron from 'node-cron';
 import { fetchTradingSettingsMap } from '../utils/tradingSettings';
 import { sendWhatsAppNotification } from './whatsappNotifier';
@@ -22,10 +23,12 @@ export class AISignalGenerator {
   private aiStrategy: AITradingStrategyService | null = null;
   private aiEnabled = false;
   private exchangeService: ExchangeIntegrationService;
+  private positionTracker: PositionTrackerService;
 
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
     this.exchangeService = new ExchangeIntegrationService(fastify);
+    this.positionTracker = new PositionTrackerService(fastify);
     this.initializeAI();
   }
 
@@ -72,6 +75,9 @@ export class AISignalGenerator {
 
     // Also run immediately on start
     this.generateSignals();
+
+    // Start position tracker (runs every 5 minutes)
+    this.positionTracker.start();
 
     this.isRunning = true;
     this.fastify.log.info(
@@ -269,11 +275,12 @@ export class AISignalGenerator {
                 this.fastify.log.info(
                   `💾 Saving ${signal.type} (${signal.strength}) for ${coin.symbol} to user ${user.user_id}`
                 );
-                await client.query(
+                const signalResult = await client.query(
                   `INSERT INTO signals
                    (user_id, coin_id, coin_symbol, signal_type, price, strength, indicators, message,
                     position, leverage, entry_price, stop_loss, take_profit, risk_reward_ratio)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                   RETURNING id`,
                   [
                     user.user_id,
                     coin.id,
@@ -298,9 +305,42 @@ export class AISignalGenerator {
                   ]
                 );
 
+                const signalId = signalResult.rows[0].id;
+
+                // Create active position for tracking (only for BUY/SELL signals with futures data)
+                const runInBackground = settings ? settings.run_in_background !== false : true;
+                this.fastify.log.info(
+                  `Position tracker check: runInBackground=${runInBackground}, hasFutures=${!!futuresPosition}, type=${signal.type}, signalId=${signalId}`
+                );
+                if (runInBackground && futuresPosition && (signal.type === 'BUY' || signal.type === 'SELL')) {
+                  this.fastify.log.info(
+                    `🎯 Creating position for ${coin.symbol} ${futuresPosition.position} - signal #${signalId}`
+                  );
+                  try {
+                    await this.positionTracker.createPosition(
+                      user.user_id,
+                      signalId,
+                      coin.id,
+                      coin.symbol.toUpperCase(),
+                      futuresPosition.position as 'LONG' | 'SHORT',
+                      futuresPosition.entry_price,
+                      futuresPosition.stop_loss,
+                      futuresPosition.take_profit,
+                      Math.round(futuresPosition.leverage) // Round to integer for database
+                    );
+                    this.fastify.log.info(
+                      `📊 Created active position for ${coin.symbol} ${futuresPosition.position} - user ${user.user_id}`
+                    );
+                  } catch (posError) {
+                    this.fastify.log.error(
+                      { error: posError },
+                      `Failed to create position for signal ${signalId}`
+                    );
+                  }
+                }
+
                 // Send background WhatsApp notification if configured
                 // Only send for MODERATE and STRONG signals (filter out WEAK)
-                const runInBackground = settings ? settings.run_in_background !== false : true;
                 if (runInBackground && settings?.whatsapp_number && signal.strength !== 'WEAK') {
                   await sendWhatsAppNotification(this.fastify, {
                     phone: settings.whatsapp_number,
