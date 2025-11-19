@@ -415,41 +415,62 @@ export class AISignalGenerator {
    * Format comprehensive signal message with futures parameters
    */
   private formatSignalMessage(coin: any, signal: EnhancedSignal, futuresPosition?: any): string {
-    const parts: string[] = [];
+    // Get current time in WAT (West Africa Time)
+    const now = new Date();
+    const timeStr = now.toLocaleString('en-US', {
+      timeZone: 'Africa/Lagos',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
 
-    parts.push(
-      `${coin.symbol.toUpperCase()} @ $${coin.current_price.toFixed(
-        coin.current_price < 1 ? 6 : 2
-      )}`
-    );
+    // Signal type emoji
+    const signalEmoji = signal.type === 'BUY' ? '🟢' : '🔴';
+    const strengthEmoji = signal.strength === 'STRONG' ? '⚡' : signal.strength === 'MODERATE' ? '📊' : '💡';
 
-    parts.push(`${signal.strength} ${signal.type} - ${signal.overallScore}% confidence`);
+    const priceStr = coin.current_price.toFixed(coin.current_price < 1 ? 6 : 2);
+
+    let message = `${signalEmoji} *${signal.type} SIGNAL* ${strengthEmoji}\n`;
+    message += `⏰ ${timeStr} WAT\n`;
+    message += `━━━━━━━━━━━━━━━━\n\n`;
+
+    message += `*${coin.symbol.toUpperCase()}* @ $${priceStr}\n`;
+    message += `Confidence: *${signal.overallScore}%* (${signal.strength})\n`;
 
     // Add futures parameters
     if (futuresPosition) {
-      parts.push(
-        `${futuresPosition.position} ${futuresPosition.leverage}x | Entry: $${futuresPosition.entry_price.toFixed(
-          coin.current_price < 1 ? 6 : 2
-        )} | SL: $${futuresPosition.stop_loss.toFixed(
-          coin.current_price < 1 ? 6 : 2
-        )} | TP: $${futuresPosition.take_profit.toFixed(
-          coin.current_price < 1 ? 6 : 2
-        )} | R:R ${futuresPosition.risk_reward_ratio}:1`
-      );
+      message += `\n📈 *FUTURES SETUP*\n`;
+      message += `Position: ${futuresPosition.position} ${futuresPosition.leverage}x\n`;
+      message += `Entry: $${futuresPosition.entry_price.toFixed(coin.current_price < 1 ? 6 : 2)}\n`;
+      message += `Stop Loss: $${futuresPosition.stop_loss.toFixed(coin.current_price < 1 ? 6 : 2)}\n`;
+      message += `Take Profit: $${futuresPosition.take_profit.toFixed(coin.current_price < 1 ? 6 : 2)}\n`;
+      message += `Risk:Reward: ${futuresPosition.risk_reward_ratio}:1\n`;
     }
 
+    // AI insight
     if (signal.aiInsight && signal.aiInsight !== 'AI analysis unavailable') {
-      parts.push(`AI: ${signal.aiInsight}`);
+      message += `\n🤖 *AI INSIGHT*\n${signal.aiInsight}\n`;
     }
 
+    // Technical signals
     if (signal.reasoning.length > 0) {
-      parts.push(`Signals: ${signal.reasoning.slice(0, 2).join(', ')}`);
+      message += `\n📊 *SIGNALS*\n`;
+      signal.reasoning.slice(0, 3).forEach((reason) => {
+        message += `• ${reason}\n`;
+      });
     }
 
+    // Risk factors
     if (signal.riskFactors.length > 0) {
-      parts.push(`Risks: ${signal.riskFactors.slice(0, 2).join(', ')}`);
+      message += `\n⚠️ *RISKS*\n`;
+      signal.riskFactors.slice(0, 2).forEach((risk) => {
+        message += `• ${risk}\n`;
+      });
     }
 
-    return parts.join(' | ');
+    message += `\n━━━━━━━━━━━━━━━━\n`;
+    message += `_Millitime Trading Signal_`;
+
+    return message;
   }
 }
