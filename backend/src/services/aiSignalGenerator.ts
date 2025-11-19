@@ -181,28 +181,50 @@ export class AISignalGenerator {
           if (signal) {
             totalTokensUsed += signal.tokensUsed || 0;
 
+            this.fastify.log.info(
+              `Processing signal for ${coin.symbol} - ${usersResult.rows.length} users watching`
+            );
+
             // Create signal for each user
             for (const user of usersResult.rows) {
+              this.fastify.log.info(
+                `Checking user ${user.user_id} for ${coin.symbol}`
+              );
               const settings = settingsMap.get(user.user_id);
+              this.fastify.log.info(
+                `Settings for user ${user.user_id}: algo=${settings?.algo_enabled}, ai=${settings?.ai_enabled}`
+              );
               const algoEnabled = settings ? settings.algo_enabled !== false : true;
               if (!algoEnabled) {
+                this.fastify.log.info(
+                  `Skipping ${coin.symbol} for user ${user.user_id} - algo disabled`
+                );
                 continue;
               }
 
-              // Check exchange compatibility
+              // Check exchange compatibility (DISABLED - exchange sync not working)
+              // TODO: Re-enable once exchange data sync is fixed
+              /*
               if (settings?.preferred_exchange) {
+                this.fastify.log.info(
+                  `Checking ${coin.symbol} availability on ${settings.preferred_exchange} for user ${user.user_id}`
+                );
                 const isAvailable = await this.exchangeService.isCoinAvailable(
                   settings.preferred_exchange,
                   coin.id,
-                  true // Require futures availability
+                  false // Allow spot trading (futures requirement removed)
+                );
+                this.fastify.log.info(
+                  `${coin.symbol} on ${settings.preferred_exchange}: ${isAvailable ? 'AVAILABLE' : 'NOT AVAILABLE'}`
                 );
                 if (!isAvailable) {
-                  this.fastify.log.debug(
+                  this.fastify.log.info(
                     `Skipping ${coin.symbol} for user ${user.user_id} - not available on ${settings.preferred_exchange}`
                   );
                   continue;
                 }
               }
+              */
 
               // Check for recent signals within 15-minute window
               const recentSignal = await client.query(
@@ -244,6 +266,9 @@ export class AISignalGenerator {
 
               // Create signal if no duplicate or if STRONG
               if (recentSignal.rows.length === 0 || signal.strength === 'STRONG') {
+                this.fastify.log.info(
+                  `💾 Saving ${signal.type} (${signal.strength}) for ${coin.symbol} to user ${user.user_id}`
+                );
                 await client.query(
                   `INSERT INTO signals
                    (user_id, coin_id, coin_symbol, signal_type, price, strength, indicators, message,
@@ -282,6 +307,10 @@ export class AISignalGenerator {
                     apiKey: settings.whatsapp_api_key,
                   });
                 }
+              } else {
+                this.fastify.log.debug(
+                  `Skipping duplicate ${signal.type} (${signal.strength}) for ${coin.symbol} user ${user.user_id} - recent signal exists`
+                );
               }
             }
 
