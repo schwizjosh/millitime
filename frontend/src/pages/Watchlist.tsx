@@ -191,7 +191,7 @@ export default function Watchlist() {
                     <div className="price-section">
                       <div className="current-price">{formatPrice(priceData.current_price)}</div>
                       <div className={`price-change ${isPositive ? 'positive' : 'negative'}`}>
-                        {isPositive ? '▲' : '▼'} {Math.abs(priceData.price_change_percentage_24h).toFixed(2)}%
+                        {isPositive ? '▲' : '▼'} {Math.abs(priceData.price_change_percentage_24h || 0).toFixed(2)}%
                       </div>
                     </div>
                   )}

@@ -138,6 +138,41 @@ export interface CoinPrice {
   price_change_percentage_24h: number;
 }
 
+export interface NewsArticle {
+  id: number;
+  source: string;
+  article_id: string;
+  title: string;
+  url: string;
+  content: string | null;
+  image_url: string | null;
+  published_at: string;
+  sentiment: string | null;
+  coins_mentioned: string[];
+  categories: string[];
+  votes: number;
+  is_trending: boolean;
+  created_at: string;
+}
+
+export interface SocialMetrics {
+  id: number;
+  coin_id: string;
+  coin_symbol: string;
+  date: string;
+  social_volume: number;
+  social_sentiment: number;
+  social_contributors: number;
+  social_dominance: number;
+  galaxy_score: number | null;
+  alt_rank: number | null;
+  reddit_posts: number;
+  reddit_comments: number;
+  reddit_score: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // Auth APIs
 export const authAPI = {
   register: (email: string, username: string, password: string) =>
@@ -239,6 +274,30 @@ export const backtestAPI = {
 
   delete: (id: number) =>
     api.delete(`/api/backtest/${id}`),
+};
+
+// News APIs
+export const newsAPI = {
+  getNews: () =>
+    api.get<{ news: NewsArticle[] }>('/api/news'),
+
+  getCoinNews: (coinSymbol: string) =>
+    api.get<{ news: NewsArticle[] }>(`/api/news/coin/${coinSymbol}`),
+
+  getTrendingNews: () =>
+    api.get<{ news: NewsArticle[] }>('/api/news/trending'),
+
+  getStats: () =>
+    api.get('/api/news/stats'),
+};
+
+// Social Metrics APIs
+export const socialAPI = {
+  getCoinMetrics: (coinSymbol: string) =>
+    api.get<{ metrics: SocialMetrics[] }>(`/api/social/${coinSymbol}`),
+
+  getWatchlistMetrics: () =>
+    api.get<{ metrics: SocialMetrics[] }>('/api/social/watchlist'),
 };
 
 export default api;

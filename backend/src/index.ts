@@ -8,11 +8,13 @@ import { signalsRoutes } from './routes/signals';
 import { tradingRoutes } from './routes/trading';
 import { spotlightRoutes } from './routes/spotlight';
 import { backtestRoutes } from './routes/backtest';
+import { newsRoutes } from './routes/news';
 import { SignalGenerator } from './services/signalGenerator';
 import { AISignalGenerator } from './services/aiSignalGenerator';
 import { SpotlightCoinsDiscoveryService } from './services/spotlightCoinsDiscovery';
 import { ExchangeIntegrationService } from './services/exchangeIntegration';
 import { AIProviderService } from './services/aiProvider';
+import { NewsAggregationService } from './services/newsAggregationService';
 
 dotenv.config();
 
@@ -73,6 +75,7 @@ fastify.register(signalsRoutes);
 fastify.register(tradingRoutes);
 fastify.register(spotlightRoutes);
 fastify.register(backtestRoutes);
+fastify.register(newsRoutes);
 
 const start = async () => {
   try {
@@ -113,6 +116,11 @@ const start = async () => {
     }
     const spotlightService = new SpotlightCoinsDiscoveryService(fastify, aiProvider);
     spotlightService.start();
+
+    // Start News Aggregation Service
+    console.log('📰 Starting News Aggregation Service...');
+    const newsService = new NewsAggregationService(fastify);
+    newsService.start();
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

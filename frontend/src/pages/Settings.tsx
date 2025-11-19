@@ -63,6 +63,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
 
+
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark-mode');
@@ -184,12 +185,13 @@ export default function Settings() {
         </div>
 
         <div className="settings-section">
-          <h2>Trading Settings</h2>
+          <h2>Active Trading</h2>
+          <p className="section-description">Control the algo and background alerts for this account.</p>
 
           <div className="setting-item">
             <div className="setting-info">
-              <label htmlFor="algo-enabled">Algorithm Enabled</label>
-              <p className="setting-description">Enable automated trading signals</p>
+              <label htmlFor="algo-enabled">Algo</label>
+              <p className="setting-description">Large on/off switch for live signal generation</p>
             </div>
             <label className="toggle-switch">
               <input
@@ -204,8 +206,8 @@ export default function Settings() {
 
           <div className="setting-item">
             <div className="setting-info">
-              <label htmlFor="run-background">Run in Background</label>
-              <p className="setting-description">Continue monitoring when not logged in</p>
+              <label htmlFor="run-background">Run in background</label>
+              <p className="setting-description">Keep WhatsApp alerts flowing even when the app is closed</p>
             </div>
             <label className="toggle-switch">
               <input
@@ -242,14 +244,14 @@ export default function Settings() {
           <div className="setting-item">
             <div className="setting-info">
               <label htmlFor="whatsapp-number">WhatsApp Number</label>
-              <p className="setting-description">Receive signal alerts via WhatsApp (optional)</p>
+              <p className="setting-description">Destination number - Uses Deluxe CRM messaging API</p>
             </div>
             <input
               id="whatsapp-number"
               type="tel"
               value={whatsappNumber}
               onChange={(e) => setWhatsappNumber(e.target.value)}
-              placeholder="+1234567890"
+              placeholder="+2347069719374"
               className="text-input"
             />
           </div>
@@ -274,9 +276,12 @@ export default function Settings() {
             onClick={saveTradingSettings}
             disabled={loading}
           >
-            {loading ? 'Saving...' : 'Save Trading Settings'}
+            {loading ? 'Saving...' : 'Save & enable alerts'}
           </button>
           {saveMessage && <p className="save-message">{saveMessage}</p>}
+          <p className="helper-text" style={{ marginTop: '8px', fontSize: '0.875rem', color: '#6b7280' }}>
+            Notifications fire on signal changes. Set your Deluxe CRM API key in backend env or per-user settings.
+          </p>
         </div>
 
         <div className="settings-section">

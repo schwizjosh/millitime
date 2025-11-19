@@ -98,14 +98,14 @@ export default function SpotlightCoins() {
                   )}
 
                   <div className="coin-stats">
-                    {coin.price_change_24h !== undefined && coin.price_change_24h !== null && (
+                    {coin.price_change_24h !== undefined && coin.price_change_24h !== null && !isNaN(coin.price_change_24h) && (
                       <div className="stat">
                         <span className="stat-label">24h Change</span>
                         <span
                           className={`stat-value ${coin.price_change_24h > 0 ? 'positive' : 'negative'}`}
                         >
                           {coin.price_change_24h > 0 ? '+' : ''}
-                          {coin.price_change_24h.toFixed(2)}%
+                          {Number(coin.price_change_24h).toFixed(2)}%
                         </span>
                       </div>
                     )}

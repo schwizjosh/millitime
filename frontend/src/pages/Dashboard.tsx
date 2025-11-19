@@ -1,23 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { signalsAPI, tradingAPI, type Signal, type TradingSettings } from '../services/api';
+import { signalsAPI, newsAPI, type Signal, type NewsArticle } from '../services/api';
 import '../styles/Dashboard.css';
-
-interface NewsItem {
-  id: number;
-  title: string;
-  source: string;
-  timestamp: string;
-  url?: string;
-  summary?: string;
-}
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [latestSignal, setLatestSignal] = useState<Signal | null>(null);
-  const [news, setNews] = useState<NewsItem[]>([]);
+  const [news, setNews] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [aiEnabled, setAiEnabled] = useState(() => {
     return localStorage.getItem('aiEnhancementsEnabled') !== 'false';
@@ -25,9 +16,6 @@ export default function Dashboard() {
   const [timezone] = useState(() => localStorage.getItem('timezone') || 'UTC');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const [tradingSettings, setTradingSettings] = useState<TradingSettings | null>(null);
-  const [settingsSaving, setSettingsSaving] = useState(false);
-  const [whatsappNumberInput, setWhatsappNumberInput] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -35,7 +23,6 @@ export default function Dashboard() {
       return;
     }
     loadDashboard();
-    loadTradingSettings();
 
     // Auto-refresh every 5 minutes
     const refreshInterval = setInterval(() => {
@@ -48,27 +35,22 @@ export default function Dashboard() {
   const loadDashboard = async () => {
     try {
       setLoading(true);
-      const response = await signalsAPI.getSignals(1, 0);
-      if (response.data.signals && response.data.signals.length > 0) {
-        setLatestSignal(response.data.signals[0]);
-      }
-      // TODO: Fetch FA news from API
-      setNews([
-        {
-          id: 1,
-          title: 'Federal Reserve maintains interest rates',
-          source: 'Reuters',
-          timestamp: new Date().toISOString(),
-          summary: 'The Federal Reserve held interest rates steady as inflation shows signs of cooling.'
-        },
-        {
-          id: 2,
-          title: 'Major tech earnings beat expectations',
-          source: 'Bloomberg',
-          timestamp: new Date(Date.now() - 3600000).toISOString(),
-          summary: 'Several tech giants reported stronger than expected quarterly earnings.'
-        }
+
+      // Load latest signal and news in parallel
+      const [signalsResponse, newsResponse] = await Promise.all([
+        signalsAPI.getSignals(1, 0),
+        newsAPI.getNews()
       ]);
+
+      if (signalsResponse.data.signals && signalsResponse.data.signals.length > 0) {
+        setLatestSignal(signalsResponse.data.signals[0]);
+      }
+
+      if (newsResponse.data.news && newsResponse.data.news.length > 0) {
+        // Take top 15 most recent news articles
+        setNews(newsResponse.data.news.slice(0, 15));
+      }
+
       setLastRefresh(new Date());
     } catch (error) {
       console.error('Failed to load dashboard:', error);
@@ -77,61 +59,10 @@ export default function Dashboard() {
     }
   };
 
-  const loadTradingSettings = async () => {
-    try {
-      const response = await tradingAPI.getSettings();
-      const settings = response.data.settings;
-      setTradingSettings(settings);
-      setWhatsappNumberInput(settings.whatsapp_number || '');
-    } catch (error) {
-      console.error('Failed to load trading settings:', error);
-    }
-  };
-
   const toggleAiEnhancements = () => {
     const newValue = !aiEnabled;
     setAiEnabled(newValue);
     localStorage.setItem('aiEnhancementsEnabled', newValue.toString());
-  };
-
-  const toggleAlgo = async () => {
-    if (!tradingSettings) return;
-    try {
-      setSettingsSaving(true);
-      const nextValue = !tradingSettings.algo_enabled;
-      const response = await tradingAPI.updateSettings({ algo_enabled: nextValue });
-      setTradingSettings(response.data.settings);
-    } catch (error) {
-      console.error('Failed to toggle algo:', error);
-    } finally {
-      setSettingsSaving(false);
-    }
-  };
-
-  const toggleBackground = async () => {
-    if (!tradingSettings) return;
-    try {
-      setSettingsSaving(true);
-      const nextValue = !tradingSettings.run_in_background;
-      const response = await tradingAPI.updateSettings({ run_in_background: nextValue });
-      setTradingSettings(response.data.settings);
-    } catch (error) {
-      console.error('Failed to toggle background:', error);
-    } finally {
-      setSettingsSaving(false);
-    }
-  };
-
-  const saveWhatsappNumber = async () => {
-    try {
-      setSettingsSaving(true);
-      const response = await tradingAPI.updateSettings({ whatsapp_number: whatsappNumberInput });
-      setTradingSettings(response.data.settings);
-    } catch (error) {
-      console.error('Failed to save WhatsApp number:', error);
-    } finally {
-      setSettingsSaving(false);
-    }
   };
 
   const formatDate = (timestamp: string) => {
@@ -246,69 +177,6 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="main-content">
-        <section className="trading-controls">
-          <div className="controls-left">
-            <div className="controls-header">
-              <h2>Active Trading</h2>
-              <p>Control the algo and background alerts for this account.</p>
-            </div>
-            <div className="control-row">
-              <div className="control-label">
-                <span className="control-title">Algo</span>
-                <small>Large on/off switch for live signal generation</small>
-              </div>
-              <button
-                className={`pill-toggle ${tradingSettings?.algo_enabled ? 'on' : 'off'}`}
-                onClick={toggleAlgo}
-                disabled={settingsSaving || !tradingSettings}
-              >
-                <span className="pill-thumb">{tradingSettings?.algo_enabled ? 'On' : 'Off'}</span>
-              </button>
-            </div>
-
-            <div className="control-row">
-              <div className="control-label">
-                <span className="control-title">Run in background</span>
-                <small>Keep WhatsApp alerts flowing even when the app is closed</small>
-              </div>
-              <label className="toggle-switch-minimal">
-                <input
-                  type="checkbox"
-                  checked={tradingSettings?.run_in_background ?? true}
-                  onChange={toggleBackground}
-                  disabled={settingsSaving || !tradingSettings}
-                />
-                <span className="toggle-slider-minimal"></span>
-              </label>
-            </div>
-          </div>
-
-          <div className="controls-right">
-            <div className="controls-header">
-              <h3>WhatsApp Alerts</h3>
-              <small>Uses Deluxe CRM messaging API</small>
-            </div>
-            <label className="input-label" htmlFor="whatsapp-number">Destination number</label>
-            <input
-              id="whatsapp-number"
-              type="tel"
-              placeholder="+15551234567"
-              value={whatsappNumberInput}
-              onChange={(e) => setWhatsappNumberInput(e.target.value)}
-            />
-            <button
-              className="save-button"
-              onClick={saveWhatsappNumber}
-              disabled={settingsSaving}
-            >
-              {settingsSaving ? 'Saving...' : 'Save & enable alerts'}
-            </button>
-            <p className="helper-text">
-              Notifications fire on signal changes. Set your Deluxe CRM API key in backend env or per-user settings.
-            </p>
-          </div>
-        </section>
-
         {/* Minimal Header with AI Toggle */}
         <header className="minimal-header">
           <button
@@ -363,9 +231,51 @@ export default function Dashboard() {
                   <span className="signal-time">{formatDate(latestSignal.created_at)}</span>
                 </div>
 
-                <div className="signal-price-main">{formatPrice(latestSignal.price)}</div>
+                <div className="signal-price-main">
+                  {formatPrice(parseFloat(String(latestSignal.price)))}
+                </div>
 
                 <p className="signal-message">{latestSignal.message}</p>
+
+                {/* Futures Trading Information */}
+                {latestSignal.position && (
+                  <div className="futures-info">
+                    <div className="futures-row">
+                      <div className="futures-item">
+                        <span className="futures-label">Position</span>
+                        <span className={`futures-value position-${latestSignal.position?.toLowerCase()}`}>
+                          {latestSignal.position}
+                        </span>
+                      </div>
+                      {latestSignal.leverage && (
+                        <div className="futures-item">
+                          <span className="futures-label">Leverage</span>
+                          <span className="futures-value">{latestSignal.leverage}x</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="futures-row">
+                      {latestSignal.entry_price && (
+                        <div className="futures-item">
+                          <span className="futures-label">Entry</span>
+                          <span className="futures-value">{formatPrice(parseFloat(String(latestSignal.entry_price)))}</span>
+                        </div>
+                      )}
+                      {latestSignal.stop_loss && (
+                        <div className="futures-item">
+                          <span className="futures-label">Stop Loss</span>
+                          <span className="futures-value stop-loss">{formatPrice(parseFloat(String(latestSignal.stop_loss)))}</span>
+                        </div>
+                      )}
+                      {latestSignal.take_profit && (
+                        <div className="futures-item">
+                          <span className="futures-label">Take Profit</span>
+                          <span className="futures-value take-profit">{formatPrice(parseFloat(String(latestSignal.take_profit)))}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {latestSignal.strength && (
                   <div className="signal-strength">
@@ -409,19 +319,33 @@ export default function Dashboard() {
             <div className="news-feed">
               {news.length > 0 ? (
                 news.map((item) => (
-                  <div key={item.id} className="news-item">
+                  <a
+                    key={item.id}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="news-item"
+                  >
                     <div className="news-header">
-                      <span className="news-source">{item.source}</span>
-                      <span className="news-time">{formatDate(item.timestamp)}</span>
+                      <span className="news-source">{item.source.toUpperCase()}</span>
+                      <span className="news-time">{formatDate(item.published_at)}</span>
                     </div>
                     <h3 className="news-title">{item.title}</h3>
-                    {item.summary && <p className="news-summary">{item.summary}</p>}
-                  </div>
+                    {item.content && <p className="news-summary">{item.content}</p>}
+                    {item.coins_mentioned && item.coins_mentioned.length > 0 && (
+                      <div className="news-coins">
+                        {item.coins_mentioned.map((coin) => (
+                          <span key={coin} className="coin-tag">{coin}</span>
+                        ))}
+                      </div>
+                    )}
+                    {item.is_trending && <span className="trending-badge">🔥 Trending</span>}
+                  </a>
                 ))
               ) : (
                 <div className="empty-news">
-                  <p>News feed coming soon</p>
-                  <p className="hint">Market events and fundamental data will appear here</p>
+                  <p>Loading news...</p>
+                  <p className="hint">Aggregating from multiple sources</p>
                 </div>
               )}
             </div>

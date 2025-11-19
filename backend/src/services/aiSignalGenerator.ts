@@ -99,7 +99,7 @@ export class AISignalGenerator {
       }
 
       // Get unique coin IDs
-      const allCoinIds = Array.from(new Set(watchlistResult.rows.map((row: any) => row.coin_id as string)));
+      const allCoinIds = Array.from(new Set(watchlistResult.rows.map((row: any) => row.coin_id))) as string[];
 
       // Fetch market data
       const marketData = await coingeckoService.getCoinsMarkets(allCoinIds);
@@ -171,8 +171,19 @@ export class AISignalGenerator {
                 }
               }
 
+              // Check for recent signals within 15-minute window
+              const recentSignal = await client.query(
+                `SELECT id, signal_type, position, leverage, entry_price, stop_loss, take_profit, risk_reward_ratio
+                 FROM signals
+                 WHERE user_id = $1 AND coin_id = $2
+                 AND created_at > NOW() - INTERVAL '15 minutes'
+               ORDER BY created_at DESC LIMIT 1`,
+              [user.user_id, coin.id]
+            );
+
               // Calculate futures position parameters
-              const futuresPosition = FuturesCalculator.calculatePosition({
+              // If recent signal exists with same type, reuse stop_loss to prevent fluctuation
+              let futuresPosition = FuturesCalculator.calculatePosition({
                 signalType: signal.type,
                 currentPrice: coin.current_price,
                 technicalIndicators: signal.technicalIndicators,
@@ -180,14 +191,23 @@ export class AISignalGenerator {
                 volatility: signal.technicalIndicators.atr,
               });
 
-              // Check for recent duplicates
-              const recentSignal = await client.query(
-                `SELECT id FROM signals
-                 WHERE user_id = $1 AND coin_id = $2 AND signal_type = $3
-                 AND created_at > NOW() - INTERVAL '15 minutes'
-               ORDER BY created_at DESC LIMIT 1`,
-              [user.user_id, coin.id, signal.type]
-            );
+              // Reuse stop-loss from recent signal if same direction (within 15-min window)
+              if (recentSignal.rows.length > 0 && recentSignal.rows[0].signal_type === signal.type && futuresPosition) {
+                const recent = recentSignal.rows[0];
+                // Keep the existing stop-loss, entry, and leverage stable
+                futuresPosition = {
+                  ...futuresPosition,
+                  entry_price: recent.entry_price,
+                  stop_loss: recent.stop_loss,
+                  leverage: recent.leverage,
+                  // Recalculate take profit based on stable stop-loss
+                  take_profit: recent.take_profit,
+                  risk_reward_ratio: recent.risk_reward_ratio,
+                };
+                this.fastify.log.debug(
+                  `Reusing stable stop-loss for ${coin.symbol}: ${recent.stop_loss} (within 15-min window)`
+                );
+              }
 
               // Create signal if no duplicate or if STRONG
               if (recentSignal.rows.length === 0 || signal.strength === 'STRONG') {
