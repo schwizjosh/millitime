@@ -109,6 +109,32 @@ export interface SpotlightCoin {
   created_at: string;
 }
 
+export interface TradingPosition {
+  id: number;
+  user_id: number;
+  signal_id: number;
+  coin_id: string;
+  coin_symbol: string;
+  position_type: 'LONG' | 'SHORT';
+  leverage: number;
+  entry_price: number;
+  exit_price: number | null;
+  stop_loss: number;
+  take_profit: number;
+  opened_at: string;
+  closed_at: string | null;
+  status: 'ACTIVE' | 'CLOSED' | 'EXPIRED';
+  exit_reason: string | null;
+  pnl_usd: number | null;
+  pnl_percent: number | null;
+  user_feedback: 'GOOD' | 'BAD' | 'NEUTRAL' | null;
+  user_rating: number | null;
+  user_notes: string | null;
+  feedback_timestamp: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Backtest {
   id: number;
   coin_id: string;
@@ -299,6 +325,39 @@ export const socialAPI = {
 
   getWatchlistMetrics: () =>
     api.get<{ metrics: SocialMetrics[] }>('/api/social/watchlist'),
+};
+
+// Trading Positions APIs
+export const positionsAPI = {
+  getPositions: (limit = 50, offset = 0, status?: 'ACTIVE' | 'CLOSED' | 'EXPIRED') =>
+    api.get<{ positions: TradingPosition[] }>('/api/positions', {
+      params: { limit, offset, status }
+    }),
+
+  getPosition: (id: number) =>
+    api.get<{ position: TradingPosition }>(`/api/positions/${id}`),
+
+  submitFeedback: (id: number, feedback: {
+    user_feedback: 'GOOD' | 'BAD' | 'NEUTRAL';
+    user_rating?: number;
+    user_notes?: string;
+  }) =>
+    api.post(`/api/positions/${id}/feedback`, feedback),
+
+  getStats: (days = 30) =>
+    api.get('/api/positions/stats', { params: { days } }),
+};
+
+// ML Training APIs
+export const mlAPI = {
+  triggerTraining: (days = 30) =>
+    api.post('/api/ml/train', { days }),
+
+  getTrainingStatus: () =>
+    api.get('/api/ml/status'),
+
+  getModelInfo: () =>
+    api.get('/api/ml/model-info'),
 };
 
 export default api;
