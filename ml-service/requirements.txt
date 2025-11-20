@@ -1,0 +1,23 @@
+# XGBoost Signal Classifier Dependencies
+# Lightweight ML stack for production deployment
+
+# Core ML libraries
+xgboost==2.0.3              # Gradient boosting framework
+scikit-learn==1.4.0         # Data preprocessing and metrics
+numpy==1.26.3               # Numerical computing
+pandas==2.2.0               # Data manipulation
+
+# Model export
+onnx==1.15.0                # ONNX format for cross-platform inference
+skl2onnx==1.16.0            # Convert scikit-learn models to ONNX
+
+# Database
+psycopg2-binary==2.9.9      # PostgreSQL adapter
+
+# Utilities
+python-dotenv==1.0.1        # Environment variable management
+joblib==1.3.2               # Model serialization
+
+# Optional: Visualization for development
+matplotlib==3.8.2           # Plotting (optional)
+seaborn==0.13.1             # Statistical visualization (optional)

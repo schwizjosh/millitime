@@ -15,6 +15,7 @@ import { PositionTrackerService } from './positionTracker';
 import { multiTimeframeAnalyzer } from './multiTimeframeAnalyzer';
 import { marketContextService } from './marketContext';
 import { sentimentAnalysisService } from './sentimentAnalysis';
+import { mlSignalEnhancer } from './mlSignalEnhancer';
 import cron from 'node-cron';
 import { fetchTradingSettingsMap } from '../utils/tradingSettings';
 import { sendWhatsAppNotification } from './whatsappNotifier';
@@ -286,7 +287,35 @@ export class AISignalGenerator {
               );
             }
 
-            // Update signal strength based on final adjusted confidence
+            // Apply ML prediction (MACHINE LEARNING BOOST)
+            // Estimate leverage based on confidence (actual leverage calculated later per user)
+            const estimatedLeverage = signal.overallScore >= 80 ? 10 : signal.overallScore >= 70 ? 7 : signal.overallScore >= 60 ? 5 : 3;
+            const mlPrediction = await mlSignalEnhancer.predictWinProbability(
+              signal,
+              signal.technicalIndicators,
+              coin.current_price,
+              estimatedLeverage
+            );
+            const confidenceBeforeML = signal.overallScore;
+
+            signal.overallScore = Math.max(
+              0,
+              Math.min(100, signal.overallScore + mlPrediction.confidenceAdjustment)
+            );
+
+            // Add ML reasoning
+            if (mlPrediction.confidenceAdjustment !== 0) {
+              signal.reasoning = [
+                ...signal.reasoning,
+                `🤖 ML: ${mlPrediction.winProbability.toFixed(0)}% win probability - ${mlPrediction.recommendation}`,
+              ];
+
+              this.fastify.log.info(
+                `🤖 ML adjustment for ${coin.symbol}: ${confidenceBeforeML}% → ${signal.overallScore}% (${mlPrediction.confidenceAdjustment >= 0 ? '+' : ''}${mlPrediction.confidenceAdjustment}%) | Win probability: ${mlPrediction.winProbability.toFixed(1)}%`
+              );
+            }
+
+            // Update signal strength based on final ML-adjusted confidence
             if (signal.overallScore >= 80) {
               signal.strength = 'STRONG';
             } else if (signal.overallScore >= 60) {
