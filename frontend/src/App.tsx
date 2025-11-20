@@ -5,6 +5,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Watchlist from './pages/Watchlist';
 import SignalsHistory from './pages/SignalsHistory';
+import TradeHistory from './pages/TradeHistory';
 import Settings from './pages/Settings';
 import SpotlightCoins from './pages/SpotlightCoins';
 import './App.css';
@@ -79,6 +80,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <SignalsHistory />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/trades"
+            element={
+              <ProtectedRoute>
+                <TradeHistory />
               </ProtectedRoute>
             }
           />
