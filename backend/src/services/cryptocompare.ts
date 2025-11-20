@@ -74,6 +74,53 @@ export class CryptoCompareService {
   }
 
   /**
+   * Get 1-hour candlestick data
+   * CryptoCompare uses 'histohour' endpoint for hourly data
+   */
+  async get1HourCandles(symbol: string, limit: number = 100): Promise<CandleData[] | null> {
+    try {
+      // CryptoCompare uses base currency symbols (BTC, ETH, etc.)
+      const cleanSymbol = symbol.replace('USDT', '').replace('USD', '');
+
+      const params: any = {
+        fsym: cleanSymbol,
+        tsym: 'USD',
+        limit: limit,
+      };
+
+      if (this.apiKey) {
+        params.api_key = this.apiKey;
+      }
+
+      const response = await axios.get(`${this.baseUrl}/v2/histohour`, { params });
+
+      if (response.data.Response === 'Error') {
+        console.log(`CryptoCompare error for ${symbol}: ${response.data.Message}`);
+        return null;
+      }
+
+      if (!response.data.Data || !response.data.Data.Data) {
+        return null;
+      }
+
+      const candles: CandleData[] = response.data.Data.Data.map((candle: CryptoCompareCandle) => ({
+        time: candle.time * 1000, // Convert to milliseconds
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volumeto, // Volume in USD
+      }));
+
+      // Filter out candles with no data (all zeros)
+      return candles.filter(c => c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0);
+    } catch (error: any) {
+      console.log(`CryptoCompare 1H fetch error for ${symbol}: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
    * Get current price for a coin
    */
   async getCurrentPrice(symbol: string): Promise<number | null> {

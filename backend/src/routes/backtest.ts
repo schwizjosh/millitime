@@ -19,11 +19,13 @@ interface RunBacktestBody {
 export async function backtestRoutes(fastify: FastifyInstance) {
   // Initialize AI services for backtesting
   let aiStrategy: AITradingStrategyService | undefined;
+  const geminiKey = process.env.GEMINI_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
-  if (openaiKey || anthropicKey) {
+  if (geminiKey || openaiKey || anthropicKey) {
     const aiProvider = new AIProviderService({
+      geminiKey,
       openaiKey,
       anthropicKey,
       preferredProvider: (process.env.AI_PROVIDER as any) || 'auto',

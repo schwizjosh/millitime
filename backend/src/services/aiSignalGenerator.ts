@@ -36,12 +36,14 @@ export class AISignalGenerator {
    * Initialize AI services if keys are available
    */
   private initializeAI() {
+    const geminiKey = process.env.GEMINI_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const aiEnabled = process.env.ENABLE_AI_ANALYSIS !== 'false';
 
-    if (aiEnabled && (openaiKey || anthropicKey)) {
+    if (aiEnabled && (geminiKey || openaiKey || anthropicKey)) {
       this.aiProvider = new AIProviderService({
+        geminiKey,
         openaiKey,
         anthropicKey,
         preferredProvider: (process.env.AI_PROVIDER as any) || 'auto',
@@ -51,7 +53,7 @@ export class AISignalGenerator {
       this.aiEnabled = true;
 
       this.fastify.log.info(
-        `AI-Enhanced Trading: ENABLED (OpenAI: ${!!openaiKey}, Claude: ${!!anthropicKey})`
+        `AI-Enhanced Trading: ENABLED (Gemini: ${!!geminiKey}, OpenAI: ${!!openaiKey}, Claude: ${!!anthropicKey})`
       );
     } else {
       this.fastify.log.info('AI-Enhanced Trading: DISABLED (using technical analysis only)');
@@ -67,7 +69,7 @@ export class AISignalGenerator {
       return;
     }
 
-    // Run every 5 minutes for responsive crypto trading signals
+    // Run every 5 minutes for rapid market monitoring (with duplicate filtering)
     cron.schedule('*/5 * * * *', async () => {
       this.fastify.log.info('Running AI-enhanced signal generation...');
       await this.generateSignals();
@@ -130,9 +132,9 @@ export class AISignalGenerator {
       let totalTokensUsed = 0;
 
       for (const coin of marketData) {
-        // Get candlestick data FIRST (so we can populate price if needed)
+        // Get 1-hour candlestick data for accurate trend prediction
         const coinSymbol = coin.symbol.toUpperCase();
-        const candles = await candleDataFetcher.fetch15MinCandles(coin.id, coinSymbol, 100);
+        const candles = await candleDataFetcher.fetch1HourCandles(coin.id, coinSymbol, 100);
 
         if (!candles || candles.length < 50) {
           this.fastify.log.warn(
@@ -231,6 +233,30 @@ export class AISignalGenerator {
                 }
               }
               */
+
+              // DUPLICATE SIGNAL FILTER: Check if user has an ACTIVE position for this coin
+              // Skip signal generation if position exists in same direction
+              const activePosition = await client.query(
+                `SELECT id, position_type, status
+                 FROM trading_positions
+                 WHERE user_id = $1 AND coin_id = $2
+                 AND status = 'active'
+                 ORDER BY opened_at DESC LIMIT 1`,
+                [user.user_id, coin.id]
+              );
+
+              if (activePosition.rows.length > 0) {
+                const position = activePosition.rows[0];
+                const positionDirection = position.position_type === 'long' ? 'BUY' : 'SELL';
+
+                // If signal is same direction as active position, skip it (no duplicate)
+                if (signal.type === positionDirection) {
+                  this.fastify.log.info(
+                    `⏭️  Skipping ${signal.type} signal for ${coin.symbol} (user ${user.user_id}) - already has active ${position.position_type.toUpperCase()} position`
+                  );
+                  continue;
+                }
+              }
 
               // Check for recent signals within 15-minute window
               const recentSignal = await client.query(

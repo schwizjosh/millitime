@@ -151,6 +151,61 @@ export class BinanceService {
   }
 
   /**
+   * Get 1-hour candlestick data
+   */
+  async get1HourCandles(symbol: string, limit: number = 100): Promise<CandleData[]> {
+    try {
+      const response = await axios.get(`${this.baseURL}/klines`, {
+        params: {
+          symbol: symbol,
+          interval: '1h',  // 1-hour interval
+          limit: limit,
+        },
+        timeout: 10000,
+      });
+
+      return response.data.map((candle: any[]) => ({
+        time: candle[0], // Timestamp
+        open: parseFloat(candle[1]),
+        high: parseFloat(candle[2]),
+        low: parseFloat(candle[3]),
+        close: parseFloat(candle[4]),
+        volume: parseFloat(candle[5]),
+      }));
+    } catch (error: any) {
+      console.error(`Error fetching 1h candles for ${symbol}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get 1-hour candlestick data by CoinGecko ID
+   */
+  async get1HourCandlesByCoinId(
+    coinGeckoId: string,
+    coinSymbol: string,
+    limit: number = 100
+  ): Promise<CandleData[] | null> {
+    const binanceSymbol = this.getBinanceSymbol(coinGeckoId, coinSymbol);
+
+    if (!binanceSymbol) {
+      console.log(`No Binance symbol found for ${coinGeckoId} (${coinSymbol})`);
+      return null;
+    }
+
+    try {
+      return await this.get1HourCandles(binanceSymbol, limit);
+    } catch (error: any) {
+      // If symbol not found or geo-blocked (451)
+      if (error.response?.status === 400 || error.response?.status === 451) {
+        console.log(`Cannot fetch from Binance for ${binanceSymbol}: ${error.response?.status || 'unknown'}`);
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Get current price from Binance
    */
   async getCurrentPrice(symbol: string): Promise<number | null> {

@@ -14,17 +14,17 @@ import { CandleData } from './technicalIndicators';
  */
 export class CandleDataFetcher {
   /**
-   * Convert CoinGecko price data to 15-minute candlesticks
+   * Convert CoinGecko price data to candlesticks with configurable interval
    */
-  private convertToCandlesFromPriceData(priceData: number[][]): CandleData[] {
+  private convertToCandlesFromPriceData(priceData: number[][], intervalMinutes: number = 15): CandleData[] {
     if (!priceData || priceData.length === 0) {
       return [];
     }
 
-    // CoinGecko returns [timestamp, price] for 1 day = ~5-minute intervals
-    // We need to aggregate into 15-minute candles
+    // CoinGecko returns [timestamp, price]
+    // Aggregate into specified interval candles
     const candles: CandleData[] = [];
-    const interval = 15 * 60 * 1000; // 15 minutes in milliseconds
+    const interval = intervalMinutes * 60 * 1000; // Convert to milliseconds
 
     // Group by 15-minute intervals
     const grouped: Map<number, number[]> = new Map();
@@ -153,6 +153,77 @@ export class CandleDataFetcher {
     }
 
     console.log(`❌ Failed to fetch candle data for ${coinSymbol} from all sources`);
+    return null;
+  }
+
+  /**
+   * Fetch 1-hour candlestick data from multiple sources (for 1H predictions)
+   * @param coinId - CoinGecko coin ID
+   * @param coinSymbol - Coin symbol (e.g., 'BTC')
+   * @param limit - Number of candles to fetch (default: 100 = ~4 days)
+   */
+  async fetch1HourCandles(
+    coinId: string,
+    coinSymbol: string,
+    limit: number = 100
+  ): Promise<CandleData[] | null> {
+    // 1. Try CryptoCompare first (100K free/month, reliable)
+    try {
+      const cryptoCompareCandles = await cryptocompareService.get1HourCandles(coinSymbol, limit);
+
+      if (cryptoCompareCandles && cryptoCompareCandles.length >= 50) {
+        console.log(`✅ Fetched ${cryptoCompareCandles.length} 1H candles from CryptoCompare for ${coinSymbol}`);
+        return cryptoCompareCandles;
+      }
+    } catch (error: any) {
+      console.log(`CryptoCompare 1H failed for ${coinSymbol}, trying Kraken...`);
+    }
+
+    // 2. Try Kraken (unlimited free, no geo-blocking)
+    try {
+      const krakenCandles = await krakenService.getOHLC(coinSymbol, 60, limit);
+
+      if (krakenCandles && krakenCandles.length >= 50) {
+        console.log(`✅ Fetched ${krakenCandles.length} 1H candles from Kraken for ${coinSymbol}`);
+        return krakenCandles;
+      }
+    } catch (error: any) {
+      console.log(`Kraken 1H failed for ${coinSymbol}, trying Binance...`);
+    }
+
+    // 3. Try Binance (geo-blocked in US but kept as fallback)
+    try {
+      const binanceCandles = await binanceService.get1HourCandlesByCoinId(
+        coinId,
+        coinSymbol,
+        limit
+      );
+
+      if (binanceCandles && binanceCandles.length >= 50) {
+        console.log(`✅ Fetched ${binanceCandles.length} 1H candles from Binance for ${coinSymbol}`);
+        return binanceCandles;
+      }
+    } catch (error: any) {
+      console.log(`Binance 1H failed for ${coinSymbol}, trying CoinGecko...`);
+    }
+
+    // 4. Fallback: CoinGecko OHLC (hourly data)
+    try {
+      const ohlcData = await coingeckoService.getOHLC(coinId, 7); // 7 days of hourly data
+
+      if (ohlcData && ohlcData.length > 0) {
+        const candles = this.convertOHLCToCandleData(ohlcData);
+
+        if (candles.length >= 50) {
+          console.log(`✅ Fetched ${candles.length} 1H candles from CoinGecko OHLC for ${coinSymbol}`);
+          return candles.slice(-limit);
+        }
+      }
+    } catch (error: any) {
+      console.log(`CoinGecko 1H OHLC failed for ${coinSymbol}: ${error.message}`);
+    }
+
+    console.log(`❌ Failed to fetch 1H candle data for ${coinSymbol} from all sources`);
     return null;
   }
 

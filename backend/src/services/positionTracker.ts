@@ -58,7 +58,7 @@ export class PositionTrackerService {
     this.isRunning = true;
     this.fastify.log.info('Position Tracker Service started - checking every 5 minutes');
 
-    // Check positions every 5 minutes
+    // Check positions every 5 minutes for rapid market monitoring
     setInterval(() => {
       this.checkAllPositions().catch((error) => {
         this.fastify.log.error({ error }, 'Error checking positions');

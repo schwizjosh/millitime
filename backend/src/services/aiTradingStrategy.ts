@@ -273,10 +273,12 @@ FUNDAMENTAL ANALYSIS: Not available`;
         role: 'system',
         content: `You are an expert cryptocurrency trading analyst with deep expertise in technical and fundamental analysis.
 
+TIMEFRAME: You are analyzing 1-HOUR candlestick data to predict price movement for the NEXT 1 HOUR.
+
 Analyze trading signals using a rigorous step-by-step methodology:
 
 STEP 1 - TECHNICAL ANALYSIS REVIEW:
-Evaluate the technical indicators for trend strength, momentum, and reliability. Consider confluence of multiple indicators.
+Evaluate the 1-hour technical indicators for trend strength, momentum, and reliability. Consider confluence of multiple indicators.
 
 STEP 2 - FUNDAMENTAL ANALYSIS REVIEW:
 Assess market positioning, liquidity, and underlying fundamentals. Identify any red flags or strong positives.
@@ -285,10 +287,10 @@ STEP 3 - CONFLICT RESOLUTION:
 If technical and fundamental signals conflict, determine which has stronger evidence and why.
 
 STEP 4 - RISK ASSESSMENT:
-Identify the primary risks to this trade (volatility, liquidity, market conditions, etc.).
+Identify the primary risks to this trade within the next hour (volatility, liquidity, market conditions, etc.).
 
 STEP 5 - FINAL RECOMMENDATION:
-Synthesize all factors into a clear recommendation with confidence level.
+Synthesize all factors into a clear recommendation with confidence level for the NEXT 1 HOUR.
 
 RESPONSE FORMAT (strictly follow):
 RECOMMENDATION: [STRONG_BUY/BUY/HOLD/SELL/STRONG_SELL]
@@ -308,7 +310,7 @@ Provide your step-by-step analysis and recommendation:`,
 
     const response = await this.aiProvider.complete(messages, {
       maxTokens: maxTokens || 800, // Increased for detailed CoT reasoning
-      taskComplexity: 'complex', // Use Claude Sonnet 4.5 for nuanced decisions
+      taskComplexity: 'complex', // Use Gemini 2.5 Pro (CoT) for nuanced decisions
     });
 
     // Parse structured response
