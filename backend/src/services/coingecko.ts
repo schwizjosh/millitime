@@ -205,6 +205,16 @@ export class CoinGeckoService {
       return response.data;
     });
   }
+
+  /**
+   * Get global market data including BTC dominance, market cap, etc.
+   */
+  async getGlobalData(): Promise<any> {
+    return this.queueRequest(async () => {
+      const response = await this.api.get('/global');
+      return response.data;
+    });
+  }
 }
 
 // Export singleton instance

@@ -228,6 +228,148 @@ export class CandleDataFetcher {
   }
 
   /**
+   * Fetch 4-hour candlestick data from multiple sources
+   * @param coinId - CoinGecko coin ID
+   * @param coinSymbol - Coin symbol (e.g., 'BTC')
+   * @param limit - Number of candles to fetch (default: 100 = ~16 days)
+   */
+  async fetch4HourCandles(
+    coinId: string,
+    coinSymbol: string,
+    limit: number = 100
+  ): Promise<CandleData[] | null> {
+    // 1. Try CryptoCompare first
+    try {
+      const cryptoCompareCandles = await cryptocompareService.get4HourCandles(coinSymbol, limit);
+
+      if (cryptoCompareCandles && cryptoCompareCandles.length >= 30) {
+        console.log(`✅ Fetched ${cryptoCompareCandles.length} 4H candles from CryptoCompare for ${coinSymbol}`);
+        return cryptoCompareCandles;
+      }
+    } catch (error: any) {
+      console.log(`CryptoCompare 4H failed for ${coinSymbol}, trying Kraken...`);
+    }
+
+    // 2. Try Kraken
+    try {
+      const krakenCandles = await krakenService.getOHLC(coinSymbol, 240, limit);
+
+      if (krakenCandles && krakenCandles.length >= 30) {
+        console.log(`✅ Fetched ${krakenCandles.length} 4H candles from Kraken for ${coinSymbol}`);
+        return krakenCandles;
+      }
+    } catch (error: any) {
+      console.log(`Kraken 4H failed for ${coinSymbol}, trying Binance...`);
+    }
+
+    // 3. Try Binance
+    try {
+      const binanceCandles = await binanceService.get4HourCandlesByCoinId(
+        coinId,
+        coinSymbol,
+        limit
+      );
+
+      if (binanceCandles && binanceCandles.length >= 30) {
+        console.log(`✅ Fetched ${binanceCandles.length} 4H candles from Binance for ${coinSymbol}`);
+        return binanceCandles;
+      }
+    } catch (error: any) {
+      console.log(`Binance 4H failed for ${coinSymbol}, trying CoinGecko...`);
+    }
+
+    // 4. Fallback: CoinGecko OHLC (daily data - approximate)
+    try {
+      const ohlcData = await coingeckoService.getOHLC(coinId, 30); // 30 days
+
+      if (ohlcData && ohlcData.length > 0) {
+        const candles = this.convertOHLCToCandleData(ohlcData);
+
+        if (candles.length >= 30) {
+          console.log(`⚠️  Using daily OHLC approximation from CoinGecko for 4H ${coinSymbol}`);
+          return candles.slice(-limit);
+        }
+      }
+    } catch (error: any) {
+      console.log(`CoinGecko 4H OHLC failed for ${coinSymbol}: ${error.message}`);
+    }
+
+    console.log(`❌ Failed to fetch 4H candle data for ${coinSymbol} from all sources`);
+    return null;
+  }
+
+  /**
+   * Fetch daily (1D) candlestick data from multiple sources
+   * @param coinId - CoinGecko coin ID
+   * @param coinSymbol - Coin symbol (e.g., 'BTC')
+   * @param limit - Number of candles to fetch (default: 100 = ~3 months)
+   */
+  async fetchDailyCandles(
+    coinId: string,
+    coinSymbol: string,
+    limit: number = 100
+  ): Promise<CandleData[] | null> {
+    // 1. Try CryptoCompare first
+    try {
+      const cryptoCompareCandles = await cryptocompareService.getDailyCandles(coinSymbol, limit);
+
+      if (cryptoCompareCandles && cryptoCompareCandles.length >= 30) {
+        console.log(`✅ Fetched ${cryptoCompareCandles.length} 1D candles from CryptoCompare for ${coinSymbol}`);
+        return cryptoCompareCandles;
+      }
+    } catch (error: any) {
+      console.log(`CryptoCompare 1D failed for ${coinSymbol}, trying Kraken...`);
+    }
+
+    // 2. Try Kraken
+    try {
+      const krakenCandles = await krakenService.getOHLC(coinSymbol, 1440, limit);
+
+      if (krakenCandles && krakenCandles.length >= 30) {
+        console.log(`✅ Fetched ${krakenCandles.length} 1D candles from Kraken for ${coinSymbol}`);
+        return krakenCandles;
+      }
+    } catch (error: any) {
+      console.log(`Kraken 1D failed for ${coinSymbol}, trying Binance...`);
+    }
+
+    // 3. Try Binance
+    try {
+      const binanceCandles = await binanceService.getDailyCandlesByCoinId(
+        coinId,
+        coinSymbol,
+        limit
+      );
+
+      if (binanceCandles && binanceCandles.length >= 30) {
+        console.log(`✅ Fetched ${binanceCandles.length} 1D candles from Binance for ${coinSymbol}`);
+        return binanceCandles;
+      }
+    } catch (error: any) {
+      console.log(`Binance 1D failed for ${coinSymbol}, trying CoinGecko...`);
+    }
+
+    // 4. Fallback: CoinGecko OHLC (daily data)
+    try {
+      const ohlcData = await coingeckoService.getOHLC(coinId, Math.ceil(limit / 24 * 7)); // Convert to days
+
+      if (ohlcData && ohlcData.length > 0) {
+        const candles = this.convertOHLCToCandleData(ohlcData);
+
+        if (candles.length >= 30) {
+          console.log(`✅ Fetched ${candles.length} 1D candles from CoinGecko OHLC for ${coinSymbol}`);
+          return candles.slice(-limit);
+        }
+      }
+    } catch (error: any) {
+      console.log(`CoinGecko 1D OHLC failed for ${coinSymbol}: ${error.message}`);
+    }
+
+    console.log(`❌ Failed to fetch 1D candle data for ${coinSymbol} from all sources`);
+    return null;
+  }
+
+  /**
    * Fetch candles for multiple coins in parallel
    */
   async fetchMultipleCoins(

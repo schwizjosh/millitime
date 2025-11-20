@@ -12,6 +12,9 @@ import { AITradingStrategyService, EnhancedSignal } from './aiTradingStrategy';
 import { FuturesCalculator } from './futuresCalculator';
 import { ExchangeIntegrationService } from './exchangeIntegration';
 import { PositionTrackerService } from './positionTracker';
+import { multiTimeframeAnalyzer } from './multiTimeframeAnalyzer';
+import { marketContextService } from './marketContext';
+import { sentimentAnalysisService } from './sentimentAnalysis';
 import cron from 'node-cron';
 import { fetchTradingSettingsMap } from '../utils/tradingSettings';
 import { sendWhatsAppNotification } from './whatsappNotifier';
@@ -94,6 +97,12 @@ export class AISignalGenerator {
     const client = await this.fastify.pg.connect();
 
     try {
+      // Fetch market context once for this cycle (QUICK WIN)
+      const marketContext = await marketContextService.getMarketContext();
+      this.fastify.log.info(
+        `Market Context: ${marketContextService.getSummary(marketContext)}`
+      );
+
       // Get all unique active coins with user preferences
       const watchlistResult = await client.query(
         `SELECT DISTINCT w.coin_id, w.coin_symbol, w.user_id
@@ -132,16 +141,34 @@ export class AISignalGenerator {
       let totalTokensUsed = 0;
 
       for (const coin of marketData) {
-        // Get 1-hour candlestick data for accurate trend prediction
+        // Get multi-timeframe candlestick data for accurate trend prediction
         const coinSymbol = coin.symbol.toUpperCase();
-        const candles = await candleDataFetcher.fetch1HourCandles(coin.id, coinSymbol, 100);
+        const candles1H = await candleDataFetcher.fetch1HourCandles(coin.id, coinSymbol, 100);
 
-        if (!candles || candles.length < 50) {
+        if (!candles1H || candles1H.length < 50) {
           this.fastify.log.warn(
-            `Not enough candlestick data for ${coin.symbol}, skipping`
+            `Not enough 1H candlestick data for ${coin.symbol}, skipping`
           );
           continue;
         }
+
+        // Fetch higher timeframes for multi-timeframe confirmation (QUICK WIN)
+        const candles4H = await candleDataFetcher.fetch4HourCandles(coin.id, coinSymbol, 50);
+        const candles1D = await candleDataFetcher.fetchDailyCandles(coin.id, coinSymbol, 30);
+
+        // Analyze multi-timeframe alignment
+        const mtfAnalysis = multiTimeframeAnalyzer.analyzeTimeframes(
+          candles1H,
+          candles4H,
+          candles1D
+        );
+
+        this.fastify.log.debug(
+          `Multi-timeframe for ${coin.symbol}: ${multiTimeframeAnalyzer.getSummary(mtfAnalysis)}`
+        );
+
+        // Use candles1H for backward compatibility with existing code
+        const candles = candles1H;
 
         // If we're using fallback data, populate current_price from latest candle
         if (coin.current_price === 0 && candles.length > 0) {
@@ -188,6 +215,85 @@ export class AISignalGenerator {
 
           if (signal) {
             totalTokensUsed += signal.tokensUsed || 0;
+
+            // Apply multi-timeframe confidence adjustment (QUICK WIN #1)
+            const originalConfidence = signal.overallScore;
+            signal.overallScore = Math.max(
+              0,
+              Math.min(100, signal.overallScore + mtfAnalysis.confidenceAdjustment)
+            );
+
+            // Add multi-timeframe reasoning
+            if (mtfAnalysis.confidenceAdjustment !== 0) {
+              signal.reasoning = [
+                ...mtfAnalysis.reasoning,
+                ...signal.reasoning,
+              ];
+
+              this.fastify.log.info(
+                `Multi-timeframe adjustment for ${coin.symbol}: ${originalConfidence}% → ${signal.overallScore}% (${mtfAnalysis.confidenceAdjustment >= 0 ? '+' : ''}${mtfAnalysis.confidenceAdjustment}%)`
+              );
+            }
+
+            // Apply market context filter (QUICK WIN #2)
+            const coinSpecificContext = await marketContextService.getMarketContext(coin.symbol.toUpperCase());
+            const confidenceBeforeContext = signal.overallScore;
+
+            signal.overallScore = Math.max(
+              0,
+              Math.min(100, signal.overallScore + coinSpecificContext.confidenceAdjustment)
+            );
+
+            // Add market context warnings to reasoning
+            if (coinSpecificContext.warnings.length > 0) {
+              signal.reasoning = [
+                ...signal.reasoning,
+                ...coinSpecificContext.warnings,
+              ];
+
+              this.fastify.log.info(
+                `Market context adjustment for ${coin.symbol}: ${confidenceBeforeContext}% → ${signal.overallScore}% (${coinSpecificContext.confidenceAdjustment >= 0 ? '+' : ''}${coinSpecificContext.confidenceAdjustment}%) | ${coinSpecificContext.recommendedAction}`
+              );
+            }
+
+            // Skip signal if market context says AVOID and confidence dropped significantly
+            if (coinSpecificContext.recommendedAction === 'AVOID' && signal.overallScore < 45) {
+              this.fastify.log.warn(
+                `⚠️  Skipping ${signal.type} signal for ${coin.symbol} due to adverse market conditions (${signal.overallScore}% confidence)`
+              );
+              continue;
+            }
+
+            // Apply sentiment analysis (QUICK WIN #4)
+            const sentiment = await sentimentAnalysisService.getSentiment(coin.id, coin.symbol.toUpperCase());
+            const sentimentAdjustment = sentimentAnalysisService.analyzeSentiment(sentiment, signal.type);
+            const confidenceBeforeSentiment = signal.overallScore;
+
+            signal.overallScore = Math.max(
+              0,
+              Math.min(100, signal.overallScore + sentimentAdjustment.confidenceAdjustment)
+            );
+
+            // Add sentiment reasoning
+            if (sentimentAdjustment.confidenceAdjustment !== 0) {
+              signal.reasoning = [
+                ...signal.reasoning,
+                ...sentimentAdjustment.warnings,
+              ];
+
+              this.fastify.log.info(
+                `Sentiment adjustment for ${coin.symbol}: ${confidenceBeforeSentiment}% → ${signal.overallScore}% (${sentimentAdjustment.confidenceAdjustment >= 0 ? '+' : ''}${sentimentAdjustment.confidenceAdjustment}%) | ${sentimentAdjustment.recommendation}`
+              );
+            }
+
+            // Update signal strength based on final adjusted confidence
+            if (signal.overallScore >= 80) {
+              signal.strength = 'STRONG';
+            } else if (signal.overallScore >= 60) {
+              signal.strength = 'MODERATE';
+            } else {
+              signal.strength = 'WEAK';
+            }
 
             this.fastify.log.info(
               `Processing signal for ${coin.symbol} - ${usersResult.rows.length} users watching`
