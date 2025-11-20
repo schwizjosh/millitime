@@ -10,6 +10,8 @@ import { spotlightRoutes } from './routes/spotlight';
 import { backtestRoutes } from './routes/backtest';
 import { newsRoutes } from './routes/news';
 import aiUsageRoutes from './routes/ai-usage';
+import { positionsRoutes } from './routes/positions';
+import { mlRoutes } from './routes/ml';
 import { SignalGenerator } from './services/signalGenerator';
 import { AISignalGenerator } from './services/aiSignalGenerator';
 import { SpotlightCoinsDiscoveryService } from './services/spotlightCoinsDiscovery';
@@ -79,6 +81,8 @@ fastify.register(tradingRoutes);
 fastify.register(spotlightRoutes);
 fastify.register(backtestRoutes);
 fastify.register(newsRoutes);
+fastify.register(positionsRoutes);
+fastify.register(mlRoutes);
 
 // Initialize AI provider globally for usage stats endpoint
 let globalAIProvider: AIProviderService | undefined;

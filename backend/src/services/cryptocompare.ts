@@ -121,6 +121,97 @@ export class CryptoCompareService {
   }
 
   /**
+   * Get 4-hour candlestick data
+   * CryptoCompare uses 'histohour' endpoint with aggregate parameter
+   */
+  async get4HourCandles(symbol: string, limit: number = 100): Promise<CandleData[] | null> {
+    try {
+      const cleanSymbol = symbol.replace('USDT', '').replace('USD', '');
+
+      const params: any = {
+        fsym: cleanSymbol,
+        tsym: 'USD',
+        limit: limit,
+        aggregate: 4, // Aggregate 4 x 1-hour candles = 4-hour candles
+      };
+
+      if (this.apiKey) {
+        params.api_key = this.apiKey;
+      }
+
+      const response = await axios.get(`${this.baseUrl}/v2/histohour`, { params });
+
+      if (response.data.Response === 'Error') {
+        console.log(`CryptoCompare 4H error for ${symbol}: ${response.data.Message}`);
+        return null;
+      }
+
+      if (!response.data.Data || !response.data.Data.Data) {
+        return null;
+      }
+
+      const candles: CandleData[] = response.data.Data.Data.map((candle: CryptoCompareCandle) => ({
+        time: candle.time * 1000,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volumeto,
+      }));
+
+      return candles.filter(c => c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0);
+    } catch (error: any) {
+      console.log(`CryptoCompare 4H fetch error for ${symbol}: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get daily candlestick data
+   * CryptoCompare uses 'histoday' endpoint for daily data
+   */
+  async getDailyCandles(symbol: string, limit: number = 100): Promise<CandleData[] | null> {
+    try {
+      const cleanSymbol = symbol.replace('USDT', '').replace('USD', '');
+
+      const params: any = {
+        fsym: cleanSymbol,
+        tsym: 'USD',
+        limit: limit,
+      };
+
+      if (this.apiKey) {
+        params.api_key = this.apiKey;
+      }
+
+      const response = await axios.get(`${this.baseUrl}/v2/histoday`, { params });
+
+      if (response.data.Response === 'Error') {
+        console.log(`CryptoCompare daily error for ${symbol}: ${response.data.Message}`);
+        return null;
+      }
+
+      if (!response.data.Data || !response.data.Data.Data) {
+        return null;
+      }
+
+      const candles: CandleData[] = response.data.Data.Data.map((candle: CryptoCompareCandle) => ({
+        time: candle.time * 1000,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volumeto,
+      }));
+
+      return candles.filter(c => c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0);
+    } catch (error: any) {
+      console.log(`CryptoCompare daily fetch error for ${symbol}: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
    * Get current price for a coin
    */
   async getCurrentPrice(symbol: string): Promise<number | null> {
