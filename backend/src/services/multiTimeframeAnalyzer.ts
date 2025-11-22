@@ -133,7 +133,7 @@ export class MultiTimeframeAnalyzer {
       }
     }
 
-    // Case 4: Higher timeframes conflict with 1H (WORST CASE)
+    // Case 4: Higher timeframes conflict with 1H (for 15M scalps, reduce penalty)
     if (
       (signal4H && signal4H.type !== signal1H.type && signal4H.type !== 'HOLD') ||
       (signal1D && signal1D.type !== signal1H.type && signal1D.type !== 'HOLD')
@@ -141,19 +141,19 @@ export class MultiTimeframeAnalyzer {
       reasoning.push(`CONFLICT: 1H says ${signal1H.type}`);
 
       if (signal4H && signal4H.type !== 'HOLD' && signal4H.type !== signal1H.type) {
-        reasoning.push(`4H says ${signal4H.type} - higher timeframe conflict`);
+        reasoning.push(`4H says ${signal4H.type} - counter-trend scalp`);
       }
 
       if (signal1D && signal1D.type !== 'HOLD' && signal1D.type !== signal1H.type) {
-        reasoning.push(`1D says ${signal1D.type} - major trend conflict`);
+        reasoning.push(`1D trend: ${signal1D.type}`);
       }
 
-      reasoning.push('Trading against higher timeframes - high risk');
+      reasoning.push('Quick scalp against trend - tighter SL recommended');
 
       return {
         signal: signal1H.type,
-        strength: 'WEAK',
-        confidenceAdjustment: -30, // Major confidence penalty
+        strength: 'MODERATE', // Changed from WEAK - scalps can work counter-trend
+        confidenceAdjustment: -15, // Reduced from -30 for 15M scalps
         reasoning,
       };
     }

@@ -1,5 +1,7 @@
 // Millitime Service Worker
-const CACHE_NAME = 'millitime-v1';
+const CACHE_NAME = 'millitime-v2';
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 const urlsToCache = [
   '/',
   '/index.html',
@@ -35,37 +37,68 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event - Network First strategy with stale cache fallback
 self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Cache hit - return response
-        if (response) {
-          return response;
-        }
+  // For API requests and HTML, always try network first
+  const url = new URL(event.request.url);
+  const isAPIRequest = url.pathname.startsWith('/api');
+  const isHTMLRequest = event.request.headers.get('accept')?.includes('text/html');
 
-        return fetch(event.request).then((response) => {
+  if (isAPIRequest || isHTMLRequest || url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
+    // Network-first strategy
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
           // Check if valid response
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
-          }
+          if (response && response.status === 200) {
+            // Clone response for cache
+            const responseToCache = response.clone();
 
-          // Clone response for cache
-          const responseToCache = response.clone();
-
-          caches.open(CACHE_NAME)
-            .then((cache) => {
+            caches.open(CACHE_NAME).then((cache) => {
               cache.put(event.request, responseToCache);
             });
+          }
 
           return response;
-        });
-      })
-  );
+        })
+        .catch(() => {
+          // Network failed, try cache as fallback
+          return caches.match(event.request).then((response) => {
+            if (response) {
+              console.log('Serving from cache (offline):', event.request.url);
+              return response;
+            }
+            // Return a basic offline response
+            return new Response('Offline - content not available', {
+              status: 503,
+              statusText: 'Service Unavailable',
+              headers: new Headers({
+                'Content-Type': 'text/plain'
+              })
+            });
+          });
+        })
+    );
+  } else {
+    // For static assets (images, icons, etc.), use cache-first
+    event.respondWith(
+      caches.match(event.request)
+        .then((response) => {
+          return response || fetch(event.request).then((response) => {
+            if (response && response.status === 200) {
+              const responseToCache = response.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(event.request, responseToCache);
+              });
+            }
+            return response;
+          });
+        })
+    );
+  }
 });

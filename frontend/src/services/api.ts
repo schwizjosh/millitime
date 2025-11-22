@@ -127,6 +127,7 @@ export interface TradingPosition {
   exit_reason: string | null;
   pnl_usd: number | null;
   pnl_percent: number | null;
+  tracking: boolean;
   user_feedback: 'GOOD' | 'BAD' | 'NEUTRAL' | null;
   user_rating: number | null;
   user_notes: string | null;
@@ -346,6 +347,22 @@ export const positionsAPI = {
 
   getStats: (days = 30) =>
     api.get('/api/positions/stats', { params: { days } }),
+
+  closePosition: (id: number, data: {
+    entry_price?: number;
+    exit_price?: number;
+    exit_reason?: string;
+  }) =>
+    api.post<{ position: TradingPosition; message: string; pnl: { usd: string; percent: string } }>(
+      `/api/positions/${id}/close`,
+      data
+    ),
+
+  toggleTracking: (id: number, tracking: boolean) =>
+    api.post<{ position: TradingPosition; message: string }>(
+      `/api/positions/${id}/tracking`,
+      { tracking }
+    ),
 };
 
 // ML Training APIs

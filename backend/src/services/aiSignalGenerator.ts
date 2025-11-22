@@ -73,9 +73,10 @@ export class AISignalGenerator {
       return;
     }
 
-    // Run every 5 minutes for rapid market monitoring (with duplicate filtering)
-    cron.schedule('*/5 * * * *', async () => {
-      this.fastify.log.info('Running AI-enhanced signal generation...');
+    // Run every 15 minutes for quick scalping opportunities (0.5-1% targets)
+    // Frequent signals allow rapid coin-to-coin switching
+    cron.schedule('*/15 * * * *', async () => {
+      this.fastify.log.info('Running AI-enhanced signal generation (15-min scalping)...');
       await this.generateSignals();
     });
 
@@ -142,8 +143,10 @@ export class AISignalGenerator {
       let totalTokensUsed = 0;
 
       for (const coin of marketData) {
-        // Get multi-timeframe candlestick data for accurate trend prediction
+        // 1-HOUR STRATEGY: Predicting next 1H outcome (matches 80% win rate backtest)
         const coinSymbol = coin.symbol.toUpperCase();
+
+        // Primary: 1H candles (matches backtest configuration)
         const candles1H = await candleDataFetcher.fetch1HourCandles(coin.id, coinSymbol, 100);
 
         if (!candles1H || candles1H.length < 50) {
@@ -153,29 +156,28 @@ export class AISignalGenerator {
           continue;
         }
 
-        // Fetch higher timeframes for multi-timeframe confirmation (QUICK WIN)
-        const candles4H = await candleDataFetcher.fetch4HourCandles(coin.id, coinSymbol, 50);
-        const candles1D = await candleDataFetcher.fetchDailyCandles(coin.id, coinSymbol, 30);
+        // Fetch 4H for trend confirmation only
+        const candles4H = await candleDataFetcher.fetch4HourCandles(coin.id, coinSymbol, 30);
 
-        // Analyze multi-timeframe alignment
+        // Analyze multi-timeframe alignment (1H primary, 4H confirmation)
         const mtfAnalysis = multiTimeframeAnalyzer.analyzeTimeframes(
-          candles1H,
-          candles4H,
-          candles1D
+          candles1H,   // Primary timeframe (1H predictions)
+          candles4H,   // Trend confirmation
+          null         // No daily needed for 1H trades
         );
 
         this.fastify.log.debug(
           `Multi-timeframe for ${coin.symbol}: ${multiTimeframeAnalyzer.getSummary(mtfAnalysis)}`
         );
 
-        // Use candles1H for backward compatibility with existing code
+        // Use 1H candles for signal generation
         const candles = candles1H;
 
         // If we're using fallback data, populate current_price from latest candle
         if (coin.current_price === 0 && candles.length > 0) {
           coin.current_price = candles[candles.length - 1].close;
-          // Calculate 24h change from candles (96 15-min candles = 24 hours)
-          const candles24hAgo = candles.length >= 96 ? candles[candles.length - 96] : candles[0];
+          // Calculate 24h change from candles (24 1H candles = 24 hours)
+          const candles24hAgo = candles.length >= 24 ? candles[candles.length - 24] : candles[0];
           coin.price_change_24h = coin.current_price - candles24hAgo.close;
           coin.price_change_percentage_24h = ((coin.current_price - candles24hAgo.close) / candles24hAgo.close) * 100;
         }
@@ -395,7 +397,7 @@ export class AISignalGenerator {
 
               // Check for recent signals within 15-minute window
               const recentSignal = await client.query(
-                `SELECT id, signal_type, position, leverage, entry_price, stop_loss, take_profit, risk_reward_ratio
+                `SELECT id, signal_type, strength, position, leverage, entry_price, stop_loss, take_profit, risk_reward_ratio
                  FROM signals
                  WHERE user_id = $1 AND coin_id = $2
                  AND created_at > NOW() - INTERVAL '15 minutes'
@@ -403,14 +405,15 @@ export class AISignalGenerator {
               [user.user_id, coin.id]
             );
 
-              // Calculate futures position parameters
-              // If recent signal exists with same type, reuse stop_loss to prevent fluctuation
+              // Calculate futures position parameters using REAL chart levels
+              // Uses support/resistance from candles for stop loss and take profit
               let futuresPosition = FuturesCalculator.calculatePosition({
                 signalType: signal.type,
                 currentPrice: coin.current_price,
                 technicalIndicators: signal.technicalIndicators,
                 confidence: signal.overallScore,
                 volatility: signal.technicalIndicators.atr,
+                candles: candles, // Pass candles for real support/resistance detection
               });
 
               // Reuse stop-loss from recent signal if same direction (within 15-min window)
@@ -470,10 +473,23 @@ export class AISignalGenerator {
 
                 // Create active position for tracking (only for BUY/SELL signals with futures data)
                 const runInBackground = settings ? settings.run_in_background !== false : true;
-                this.fastify.log.info(
-                  `Position tracker check: runInBackground=${runInBackground}, hasFutures=${!!futuresPosition}, type=${signal.type}, signalId=${signalId}`
-                );
-                if (runInBackground && futuresPosition && (signal.type === 'BUY' || signal.type === 'SELL')) {
+
+                // Only process MODERATE and STRONG signals for WhatsApp + position tracking
+                // WEAK signals are logged but don't trigger notifications or positions
+                const shouldNotify = runInBackground && settings?.whatsapp_number && signal.strength !== 'WEAK';
+
+                if (shouldNotify && futuresPosition && (signal.type === 'BUY' || signal.type === 'SELL')) {
+                  // Send WhatsApp notification FIRST
+                  await sendWhatsAppNotification(this.fastify, {
+                    phone: settings!.whatsapp_number!,
+                    message: this.formatSignalMessage(coin, signal, futuresPosition),
+                    apiKey: settings!.whatsapp_api_key,
+                  });
+                  this.fastify.log.info(
+                    `📱 WhatsApp sent: ${signal.type} ${signal.strength} for ${coin.symbol} to user ${user.user_id}`
+                  );
+
+                  // THEN create position for tracking (only after notification sent)
                   this.fastify.log.info(
                     `🎯 Creating position for ${coin.symbol} ${futuresPosition.position} - signal #${signalId}`
                   );
@@ -487,7 +503,8 @@ export class AISignalGenerator {
                       futuresPosition.entry_price,
                       futuresPosition.stop_loss,
                       futuresPosition.take_profit,
-                      Math.round(futuresPosition.leverage) // Round to integer for database
+                      Math.round(futuresPosition.leverage), // Round to integer for database
+                      signal.strength // Pass strength for auto-tracking
                     );
                     this.fastify.log.info(
                       `📊 Created active position for ${coin.symbol} ${futuresPosition.position} - user ${user.user_id}`
@@ -498,28 +515,61 @@ export class AISignalGenerator {
                       `Failed to create position for signal ${signalId}`
                     );
                   }
-                }
-
-                // Send background WhatsApp notification if configured
-                // Only send for MODERATE and STRONG signals (filter out WEAK)
-                if (runInBackground && settings?.whatsapp_number && signal.strength !== 'WEAK') {
-                  await sendWhatsAppNotification(this.fastify, {
-                    phone: settings.whatsapp_number,
-                    message: this.formatSignalMessage(coin, signal, futuresPosition),
-                    apiKey: settings.whatsapp_api_key,
-                  });
-                  this.fastify.log.info(
-                    `📱 WhatsApp sent: ${signal.type} ${signal.strength} for ${coin.symbol} to user ${user.user_id}`
-                  );
                 } else if (signal.strength === 'WEAK') {
                   this.fastify.log.debug(
-                    `Skipping WhatsApp for WEAK ${signal.type} signal on ${coin.symbol} - only MODERATE/STRONG trigger notifications`
+                    `Skipping WEAK ${signal.type} signal on ${coin.symbol} - only MODERATE/STRONG trigger notifications + tracking`
                   );
                 }
               } else {
-                this.fastify.log.debug(
-                  `Skipping duplicate ${signal.type} (${signal.strength}) for ${coin.symbol} user ${user.user_id} - recent signal exists`
+                // DUPLICATE SIGNAL: Send position analysis instead of new signal
+                const recentSignalData = recentSignal.rows[0];
+                const runInBackground = settings ? settings.run_in_background !== false : true;
+
+                // FIX: Only send position updates if original signal was MODERATE/STRONG
+                // WEAK signals don't trigger WhatsApp or position creation, so skip updates for them
+                const originalStrength = recentSignalData.strength;
+                if (originalStrength === 'WEAK') {
+                  this.fastify.log.debug(
+                    `Skipping position analysis for ${coin.symbol} - original signal was WEAK (no initial notification sent)`
+                  );
+                  continue;
+                }
+
+                // Verify user is still actively monitoring this coin before sending position analysis
+                const isStillWatching = await client.query(
+                  'SELECT 1 FROM watchlist WHERE user_id = $1 AND coin_id = $2 AND is_active = true',
+                  [user.user_id, coin.id]
                 );
+
+                if (isStillWatching.rows.length === 0) {
+                  this.fastify.log.debug(
+                    `Skipping position analysis for ${coin.symbol} - user ${user.user_id} no longer monitoring this coin`
+                  );
+                  continue;
+                }
+
+                // Only send position analysis if same direction (e.g., both SELL)
+                if (runInBackground && settings?.whatsapp_number && recentSignalData.signal_type === signal.type) {
+                  const positionAnalysis = this.formatPositionAnalysisMessage(
+                    coin,
+                    signal,
+                    recentSignalData,
+                    futuresPosition
+                  );
+
+                  await sendWhatsAppNotification(this.fastify, {
+                    phone: settings.whatsapp_number,
+                    message: positionAnalysis,
+                    apiKey: settings.whatsapp_api_key,
+                  });
+                  this.fastify.log.info(
+                    `📊 WhatsApp position analysis sent for ${coin.symbol} (${signal.type}) to user ${user.user_id}`
+                  );
+                } else {
+                  this.fastify.log.debug(
+                    `Skipping duplicate ${signal.type} (${signal.strength}) for ${coin.symbol} user ${user.user_id} - recent signal exists`
+                  );
+                }
               }
             }
 
@@ -674,6 +724,121 @@ export class AISignalGenerator {
       message += `\n⚠️ *RISKS*\n`;
       signal.riskFactors.slice(0, 2).forEach((risk) => {
         message += `• ${risk}\n`;
+      });
+    }
+
+    message += `\n━━━━━━━━━━━━━━━━\n`;
+    message += `_Millitime Trading Signal_`;
+
+    return message;
+  }
+
+  /**
+   * Format position analysis message for duplicate signals
+   * Sent when same signal direction repeats (e.g., 2nd SELL on same coin)
+   */
+  private formatPositionAnalysisMessage(
+    coin: any,
+    signal: EnhancedSignal,
+    recentSignal: any,
+    currentFuturesPosition?: any
+  ): string {
+    // Get current time in WAT (West Africa Time)
+    const now = new Date();
+    const timeStr = now.toLocaleString('en-US', {
+      timeZone: 'Africa/Lagos',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const priceStr = coin.current_price.toFixed(coin.current_price < 1 ? 6 : 2);
+    const entryPrice = recentSignal.entry_price || coin.current_price;
+    const stopLoss = recentSignal.stop_loss;
+    const takeProfit = recentSignal.take_profit;
+    const positionType = recentSignal.position || (recentSignal.signal_type === 'BUY' ? 'LONG' : 'SHORT');
+
+    // Calculate position status
+    const pnlPercent = positionType === 'LONG'
+      ? ((coin.current_price - entryPrice) / entryPrice) * 100
+      : ((entryPrice - coin.current_price) / entryPrice) * 100;
+
+    const isInProfit = pnlPercent > 0;
+    const statusEmoji = isInProfit ? '🟢' : '🔴';
+
+    // Determine position validity
+    let recommendation: string;
+    let actionEmoji: string;
+
+    if (stopLoss) {
+      const hitStopLoss = positionType === 'LONG'
+        ? coin.current_price <= stopLoss
+        : coin.current_price >= stopLoss;
+
+      const nearStopLoss = positionType === 'LONG'
+        ? coin.current_price <= stopLoss * 1.01
+        : coin.current_price >= stopLoss * 0.99;
+
+      const nearTakeProfit = takeProfit && (
+        positionType === 'LONG'
+          ? coin.current_price >= takeProfit * 0.98
+          : coin.current_price <= takeProfit * 1.02
+      );
+
+      if (hitStopLoss) {
+        recommendation = '⛔ STOP LOSS HIT - Consider exiting position';
+        actionEmoji = '❌';
+      } else if (nearStopLoss) {
+        recommendation = '⚠️ Near stop loss - Watch closely or tighten SL';
+        actionEmoji = '⚠️';
+      } else if (nearTakeProfit) {
+        recommendation = '🎯 Near take profit - Consider taking partial profits';
+        actionEmoji = '✅';
+      } else if (isInProfit && pnlPercent > 1) {
+        recommendation = '📈 In profit - Consider moving SL to break-even';
+        actionEmoji = '✅';
+      } else if (!isInProfit && Math.abs(pnlPercent) > 2) {
+        recommendation = '📉 Drawdown increasing - Reassess or hold with original SL';
+        actionEmoji = '⚠️';
+      } else {
+        recommendation = '✅ Position still valid - Hold with current SL/TP';
+        actionEmoji = '✅';
+      }
+    } else {
+      recommendation = signal.overallScore >= 60
+        ? '✅ Signal confirmed - Position still valid'
+        : '⚠️ Confidence dropped - Consider reducing position';
+      actionEmoji = signal.overallScore >= 60 ? '✅' : '⚠️';
+    }
+
+    let message = `📊 *POSITION UPDATE* ${actionEmoji}\n`;
+    message += `⏰ ${timeStr} WAT\n`;
+    message += `━━━━━━━━━━━━━━━━\n\n`;
+
+    message += `*${coin.symbol.toUpperCase()}* @ $${priceStr}\n`;
+    message += `Position: *${positionType}* ${recentSignal.leverage || 3}x\n`;
+    message += `Current P/L: ${statusEmoji} *${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%*\n\n`;
+
+    // Original position details
+    message += `📍 *POSITION DETAILS*\n`;
+    message += `Entry: $${entryPrice.toFixed(coin.current_price < 1 ? 6 : 2)}\n`;
+    if (stopLoss) {
+      message += `Stop Loss: $${stopLoss.toFixed(coin.current_price < 1 ? 6 : 2)}\n`;
+    }
+    if (takeProfit) {
+      message += `Take Profit: $${takeProfit.toFixed(coin.current_price < 1 ? 6 : 2)}\n`;
+    }
+
+    // Analysis
+    message += `\n🔍 *ANALYSIS*\n`;
+    message += `${recommendation}\n`;
+    message += `Signal confidence: ${signal.overallScore}%\n`;
+
+    // Technical signals
+    if (signal.reasoning.length > 0) {
+      message += `\n📊 *SIGNALS*\n`;
+      signal.reasoning.slice(0, 2).forEach((reason) => {
+        message += `• ${reason}\n`;
       });
     }
 

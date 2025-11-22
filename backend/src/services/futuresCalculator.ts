@@ -1,10 +1,13 @@
 /**
  * Futures Trading Calculator
- * Calculates optimal leverage, entry points, stop loss, and take profit for futures trading
+ * Calculates optimal leverage, entry points, stop loss, and take profit
+ *
+ * CRITICAL: Uses REAL chart levels (support/resistance), NOT arbitrary percentages!
  */
 
 import { FuturesPosition } from '../types';
-import { TechnicalIndicatorValues } from './technicalIndicators';
+import { CandleData, TechnicalIndicatorValues } from './technicalIndicators';
+import { SupportResistanceDetector, SwingPoints } from './supportResistance';
 
 export interface FuturesCalculationParams {
   signalType: 'BUY' | 'SELL' | 'HOLD';
@@ -12,17 +15,25 @@ export interface FuturesCalculationParams {
   technicalIndicators: TechnicalIndicatorValues;
   confidence: number; // 0-100
   volatility?: number; // ATR or volatility measure
+  candles?: CandleData[]; // Required for real support/resistance detection
 }
 
 export class FuturesCalculator {
   /**
    * Calculate optimal futures position with risk management
+   * Uses REAL support/resistance levels from chart, not formulas!
    */
   static calculatePosition(params: FuturesCalculationParams): FuturesPosition | null {
-    const { signalType, currentPrice, technicalIndicators, confidence, volatility } = params;
+    const { signalType, currentPrice, technicalIndicators, confidence, volatility, candles } = params;
 
     if (signalType === 'HOLD') {
       return null; // No position for HOLD signals
+    }
+
+    // Skip low confidence trades (below 60% = not worth the risk)
+    // 60%+ includes MODERATE signals which users want futures data for
+    if (confidence < 60) {
+      return null;
     }
 
     // Determine position direction
@@ -30,25 +41,53 @@ export class FuturesCalculator {
 
     // Calculate leverage based on confidence and volatility
     const leverage = this.calculateOptimalLeverage(confidence, volatility);
+    if (leverage === 0) {
+      return null; // Confidence too low
+    }
 
     // Calculate entry price with small buffer for slippage
     const entry_price = this.calculateEntryPrice(currentPrice, position);
 
-    // Calculate stop loss based on ATR and support/resistance
+    // Find real support/resistance levels from chart
+    let swingPoints: SwingPoints | null = null;
+    if (candles && candles.length >= 20) {
+      try {
+        swingPoints = SupportResistanceDetector.findSwingPoints(candles, 20);
+      } catch (error) {
+        // Fall back to ATR-based calculation if swing detection fails
+        swingPoints = null;
+      }
+    }
+
+    // Calculate stop loss based on REAL chart levels (or ATR fallback)
     const stop_loss = this.calculateStopLoss(
       entry_price,
       position,
       technicalIndicators,
-      leverage
+      leverage,
+      swingPoints
     );
 
-    // Calculate take profit with optimal risk/reward ratio
+    // Calculate take profit based on REAL resistance/support levels
     const { take_profit, risk_reward_ratio } = this.calculateTakeProfit(
       entry_price,
       stop_loss,
       position,
-      confidence
+      confidence,
+      swingPoints
     );
+
+    // Validate levels are sensible
+    const validation = SupportResistanceDetector.validateLevels(
+      entry_price,
+      stop_loss,
+      take_profit,
+      position
+    );
+
+    if (!validation.isValid) {
+      return null; // Invalid levels, skip this trade
+    }
 
     return {
       position,
@@ -62,26 +101,36 @@ export class FuturesCalculator {
 
   /**
    * Calculate optimal leverage based on confidence and volatility
+   * OPTIMIZED FOR 5-20% PROFIT TARGET PER TRADE
+   *
+   * Strategy:
+   * - 0.5% price move × 10x leverage = 5% profit (after 1% fees = 4% net)
+   * - 1.0% price move × 10x leverage = 10% profit (after 1% fees = 9% net)
+   * - 2.0% price move × 10x leverage = 20% profit (after 1% fees = 19% net)
+   *
    * Higher confidence = higher leverage (but capped for safety)
-   * Higher volatility = lower leverage
+   * Higher volatility = lower leverage (prevents liquidation)
    */
   private static calculateOptimalLeverage(confidence: number, volatility?: number): number {
-    // Base leverage on confidence
+    // Base leverage on confidence - optimized for 15-min scalping with 0.5-1% targets
     let leverage: number;
 
     if (confidence >= 85) {
-      leverage = 10; // Very high confidence
+      leverage = 10; // Very high confidence: 0.5% move = 5% profit ✅
+    } else if (confidence >= 80) {
+      leverage = 7.5; // High confidence: 0.67% move = 5% profit
     } else if (confidence >= 75) {
-      leverage = 7.5; // High confidence
-    } else if (confidence >= 65) {
-      leverage = 5; // Moderate-high confidence
-    } else if (confidence >= 55) {
-      leverage = 3; // Moderate confidence
+      leverage = 5; // Medium-high: 1% move = 5% profit
+    } else if (confidence >= 70) {
+      leverage = 3; // Medium: 1.67% move = 5% profit
+    } else if (confidence >= 60) {
+      leverage = 3; // Moderate confidence: conservative leverage for info purposes
     } else {
-      leverage = 2; // Lower confidence
+      // Below 60% confidence: DON'T TRADE (not worth the risk)
+      leverage = 0; // Will be filtered out by validation
     }
 
-    // Reduce leverage if high volatility
+    // Reduce leverage if high volatility (prevents liquidation in choppy markets)
     if (volatility) {
       if (volatility > 5) {
         leverage = Math.max(2, leverage * 0.5); // Cut leverage in half for high volatility
@@ -111,85 +160,145 @@ export class FuturesCalculator {
   }
 
   /**
-   * Calculate stop loss based on ATR and technical levels
-   * Uses ATR for volatility-adjusted stop loss
+   * Calculate stop loss using REAL chart levels (swing lows/highs)
+   * Falls back to ATR-based calculation if no swing data available
+   *
+   * CRITICAL FOR HIGH LEVERAGE: Tight stops prevent liquidation!
+   * With 10x leverage: 1% adverse move = -10% loss on capital
    */
   private static calculateStopLoss(
     entryPrice: number,
     position: 'LONG' | 'SHORT',
     indicators: TechnicalIndicatorValues,
-    leverage: number
+    leverage: number,
+    swingPoints: SwingPoints | null
   ): number {
-    // Use ATR for stop loss distance (more conservative with higher leverage)
-    const atr = indicators.atr || entryPrice * 0.02; // Default to 2% if no ATR
+    // CRITICAL: Maximum stop loss based on leverage (prevents liquidation)
+    let maxStopLossPercent: number;
+    if (leverage >= 10) {
+      maxStopLossPercent = 0.008; // 0.8% max for 10x leverage (8% capital risk)
+    } else if (leverage >= 7) {
+      maxStopLossPercent = 0.012; // 1.2% max for 7-10x leverage
+    } else if (leverage >= 5) {
+      maxStopLossPercent = 0.015; // 1.5% max for 5-7x leverage
+    } else if (leverage >= 3) {
+      maxStopLossPercent = 0.02; // 2% max for 3-5x leverage
+    } else {
+      maxStopLossPercent = 0.03; // 3% max for low leverage
+    }
 
-    // Stop loss distance decreases with leverage to manage risk
-    const stopLossMultiplier = Math.max(1.5, 3 - (leverage / 10)); // 1.5x to 3x ATR
-    const stopLossDistance = atr * stopLossMultiplier;
-
-    // Also consider support/resistance levels
     let stopLoss: number;
 
     if (position === 'LONG') {
-      // For long, stop loss below entry
-      // Use the lower of: recent low or ATR-based stop
-      const atrStop = entryPrice - stopLossDistance;
-      stopLoss = atrStop;
+      // For LONG: Place stop below recent swing low (REAL chart level!)
+      if (swingPoints && swingPoints.recentSwingLow < entryPrice) {
+        const swingBasedStop = swingPoints.recentSwingLow * 0.999; // Slightly below swing low
+        const stopDistance = (entryPrice - swingBasedStop) / entryPrice;
 
-      // Make sure stop loss is reasonable (not more than 5% for high leverage)
-      const maxStopLossPercent = leverage >= 5 ? 0.03 : 0.05;
-      const minStopLoss = entryPrice * (1 - maxStopLossPercent);
-      stopLoss = Math.max(stopLoss, minStopLoss);
+        // Use swing low ONLY if it's not too far (respects max stop loss)
+        if (stopDistance <= maxStopLossPercent) {
+          stopLoss = swingBasedStop;
+        } else {
+          // Swing low too far - use max stop loss instead
+          stopLoss = entryPrice * (1 - maxStopLossPercent);
+        }
+      } else {
+        // No swing data - fallback to ATR-based calculation
+        const atr = indicators.atr || entryPrice * 0.015;
+        const atrStop = entryPrice - (atr * 1.5);
+        const minStopLoss = entryPrice * (1 - maxStopLossPercent);
+        stopLoss = Math.max(atrStop, minStopLoss);
+      }
     } else {
-      // For short, stop loss above entry
-      const atrStop = entryPrice + stopLossDistance;
-      stopLoss = atrStop;
+      // For SHORT: Place stop above recent swing high (REAL chart level!)
+      if (swingPoints && swingPoints.recentSwingHigh > entryPrice) {
+        const swingBasedStop = swingPoints.recentSwingHigh * 1.001; // Slightly above swing high
+        const stopDistance = (swingBasedStop - entryPrice) / entryPrice;
 
-      const maxStopLossPercent = leverage >= 5 ? 0.03 : 0.05;
-      const maxStopLoss = entryPrice * (1 + maxStopLossPercent);
-      stopLoss = Math.min(stopLoss, maxStopLoss);
+        // Use swing high ONLY if it's not too far (respects max stop loss)
+        if (stopDistance <= maxStopLossPercent) {
+          stopLoss = swingBasedStop;
+        } else {
+          // Swing high too far - use max stop loss instead
+          stopLoss = entryPrice * (1 + maxStopLossPercent);
+        }
+      } else {
+        // No swing data - fallback to ATR-based calculation
+        const atr = indicators.atr || entryPrice * 0.015;
+        const atrStop = entryPrice + (atr * 1.5);
+        const maxStopLoss = entryPrice * (1 + maxStopLossPercent);
+        stopLoss = Math.min(atrStop, maxStopLoss);
+      }
     }
 
     return stopLoss;
   }
 
   /**
-   * Calculate take profit based on risk/reward ratio
-   * Higher confidence = higher R:R target
+   * Calculate take profit using REAL resistance/support levels
+   * Falls back to risk/reward calculation if no level data available
+   *
+   * Strategy: Target nearest resistance (LONG) or support (SHORT)
+   * - Uses actual chart levels, not formulas!
+   * - Quick exits at real barriers = faster compound gains
    */
   private static calculateTakeProfit(
     entryPrice: number,
     stopLoss: number,
     position: 'LONG' | 'SHORT',
-    confidence: number
+    confidence: number,
+    swingPoints: SwingPoints | null
   ): { take_profit: number; risk_reward_ratio: number } {
     // Calculate risk distance
     const riskDistance = Math.abs(entryPrice - stopLoss);
 
-    // Risk/reward ratio based on confidence
-    let riskRewardRatio: number;
-    if (confidence >= 80) {
-      riskRewardRatio = 3; // 1:3 risk/reward
-    } else if (confidence >= 70) {
-      riskRewardRatio = 2.5; // 1:2.5
-    } else if (confidence >= 60) {
-      riskRewardRatio = 2; // 1:2
-    } else {
-      riskRewardRatio = 1.5; // 1:1.5
-    }
-
-    const rewardDistance = riskDistance * riskRewardRatio;
-
     let take_profit: number;
+
     if (position === 'LONG') {
-      take_profit = entryPrice + rewardDistance;
+      // For LONG: Target nearest resistance level (REAL chart level!)
+      if (swingPoints && swingPoints.nextResistance > entryPrice) {
+        const resistanceTarget = swingPoints.nextResistance * 0.999; // Slightly below resistance
+        const profitDistance = resistanceTarget - entryPrice;
+
+        // Use resistance level if it gives at least 1:1 risk/reward
+        if (profitDistance >= riskDistance) {
+          take_profit = resistanceTarget;
+        } else {
+          // Resistance too close - use minimum risk/reward instead
+          take_profit = entryPrice + (riskDistance * 1.5);
+        }
+      } else {
+        // No resistance data - fallback to risk/reward calculation
+        const targetRR = confidence >= 85 ? 2 : confidence >= 80 ? 1.5 : 1.5;
+        take_profit = entryPrice + (riskDistance * targetRR);
+      }
     } else {
-      take_profit = entryPrice - rewardDistance;
+      // For SHORT: Target nearest support level (REAL chart level!)
+      if (swingPoints && swingPoints.nextSupport < entryPrice) {
+        const supportTarget = swingPoints.nextSupport * 1.001; // Slightly above support
+        const profitDistance = entryPrice - supportTarget;
+
+        // Use support level if it gives at least 1:1 risk/reward
+        if (profitDistance >= riskDistance) {
+          take_profit = supportTarget;
+        } else {
+          // Support too close - use minimum risk/reward instead
+          take_profit = entryPrice - (riskDistance * 1.5);
+        }
+      } else {
+        // No support data - fallback to risk/reward calculation
+        const targetRR = confidence >= 85 ? 2 : confidence >= 80 ? 1.5 : 1.5;
+        take_profit = entryPrice - (riskDistance * targetRR);
+      }
     }
+
+    // Calculate actual risk/reward ratio achieved
+    const profitDistance = Math.abs(take_profit - entryPrice);
+    const risk_reward_ratio = profitDistance / riskDistance;
 
     return {
       take_profit,
-      risk_reward_ratio: riskRewardRatio,
+      risk_reward_ratio,
     };
   }
 

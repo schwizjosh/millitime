@@ -1,4 +1,5 @@
 import { binanceService } from './binance';
+import { binanceDataFetcher } from './binanceDataFetcher'; // NEW: Direct Binance API (unlimited, free!)
 import { coingeckoService } from './coingecko';
 import { cryptocompareService } from './cryptocompare';
 import { krakenService } from './kraken';
@@ -6,10 +7,10 @@ import { CandleData } from './technicalIndicators';
 
 /**
  * Hybrid candle data fetcher that tries multiple sources
- * Priority (2025 optimized for reliability):
- * 1. CryptoCompare (100K free/month, no geo-blocking)
- * 2. Kraken (unlimited free, no geo-blocking, US-friendly)
- * 3. Binance (geo-blocked in US but kept as fallback)
+ * Priority (2025 optimized for NO RATE LIMITS):
+ * 1. Binance Direct API (UNLIMITED FREE, best for backtesting!)
+ * 2. CryptoCompare (100K free/month, no geo-blocking)
+ * 3. Kraken (unlimited free, no geo-blocking, US-friendly)
  * 4. CoinGecko (rate limited but universal fallback)
  */
 export class CandleDataFetcher {
@@ -80,7 +81,19 @@ export class CandleDataFetcher {
     coinSymbol: string,
     limit: number = 100
   ): Promise<CandleData[] | null> {
-    // 1. Try CryptoCompare first (100K free/month, reliable)
+    // 1. Try Binance Direct API first (UNLIMITED, FREE, NO RATE LIMITS!)
+    try {
+      const binanceCandles = await binanceDataFetcher.fetch15MinCandles(coinId, coinSymbol, limit);
+
+      if (binanceCandles && binanceCandles.length >= 50) {
+        console.log(`✅ Fetched ${binanceCandles.length} 15min candles from Binance API for ${coinSymbol}`);
+        return binanceCandles;
+      }
+    } catch (error: any) {
+      console.log(`Binance API failed for ${coinSymbol}, trying CryptoCompare...`);
+    }
+
+    // 2. Try CryptoCompare (100K free/month, reliable)
     try {
       const cryptoCompareCandles = await cryptocompareService.get15MinCandles(coinSymbol, limit);
 
@@ -92,7 +105,7 @@ export class CandleDataFetcher {
       console.log(`CryptoCompare failed for ${coinSymbol}, trying Kraken...`);
     }
 
-    // 2. Try Kraken (unlimited free, no geo-blocking)
+    // 3. Try Kraken (unlimited free, no geo-blocking)
     try {
       const krakenCandles = await krakenService.getOHLC(coinSymbol, 15, limit);
 
@@ -167,7 +180,19 @@ export class CandleDataFetcher {
     coinSymbol: string,
     limit: number = 100
   ): Promise<CandleData[] | null> {
-    // 1. Try CryptoCompare first (100K free/month, reliable)
+    // 1. Try Binance Direct API first (UNLIMITED, FREE, NO RATE LIMITS!)
+    try {
+      const binanceCandles = await binanceDataFetcher.fetch1HourCandles(coinId, coinSymbol, limit);
+
+      if (binanceCandles && binanceCandles.length >= 50) {
+        console.log(`✅ Fetched ${binanceCandles.length} 1H candles from Binance API for ${coinSymbol}`);
+        return binanceCandles;
+      }
+    } catch (error: any) {
+      console.log(`Binance API 1H failed for ${coinSymbol}, trying CryptoCompare...`);
+    }
+
+    // 2. Try CryptoCompare (100K free/month, reliable)
     try {
       const cryptoCompareCandles = await cryptocompareService.get1HourCandles(coinSymbol, limit);
 
@@ -179,7 +204,7 @@ export class CandleDataFetcher {
       console.log(`CryptoCompare 1H failed for ${coinSymbol}, trying Kraken...`);
     }
 
-    // 2. Try Kraken (unlimited free, no geo-blocking)
+    // 3. Try Kraken (unlimited free, no geo-blocking)
     try {
       const krakenCandles = await krakenService.getOHLC(coinSymbol, 60, limit);
 
@@ -188,10 +213,10 @@ export class CandleDataFetcher {
         return krakenCandles;
       }
     } catch (error: any) {
-      console.log(`Kraken 1H failed for ${coinSymbol}, trying Binance...`);
+      console.log(`Kraken 1H failed for ${coinSymbol}, trying old Binance service...`);
     }
 
-    // 3. Try Binance (geo-blocked in US but kept as fallback)
+    // 4. Try old Binance service (fallback)
     try {
       const binanceCandles = await binanceService.get1HourCandlesByCoinId(
         coinId,
@@ -200,7 +225,7 @@ export class CandleDataFetcher {
       );
 
       if (binanceCandles && binanceCandles.length >= 50) {
-        console.log(`✅ Fetched ${binanceCandles.length} 1H candles from Binance for ${coinSymbol}`);
+        console.log(`✅ Fetched ${binanceCandles.length} 1H candles from Binance service for ${coinSymbol}`);
         return binanceCandles;
       }
     } catch (error: any) {
@@ -238,7 +263,19 @@ export class CandleDataFetcher {
     coinSymbol: string,
     limit: number = 100
   ): Promise<CandleData[] | null> {
-    // 1. Try CryptoCompare first
+    // 1. Try Binance Direct API first (UNLIMITED, FREE, NO RATE LIMITS!)
+    try {
+      const binanceCandles = await binanceDataFetcher.fetch4HourCandles(coinId, coinSymbol, limit);
+
+      if (binanceCandles && binanceCandles.length >= 30) {
+        console.log(`✅ Fetched ${binanceCandles.length} 4H candles from Binance API for ${coinSymbol}`);
+        return binanceCandles;
+      }
+    } catch (error: any) {
+      console.log(`Binance API 4H failed for ${coinSymbol}, trying CryptoCompare...`);
+    }
+
+    // 2. Try CryptoCompare
     try {
       const cryptoCompareCandles = await cryptocompareService.get4HourCandles(coinSymbol, limit);
 
@@ -250,7 +287,7 @@ export class CandleDataFetcher {
       console.log(`CryptoCompare 4H failed for ${coinSymbol}, trying Kraken...`);
     }
 
-    // 2. Try Kraken
+    // 3. Try Kraken
     try {
       const krakenCandles = await krakenService.getOHLC(coinSymbol, 240, limit);
 
@@ -259,10 +296,10 @@ export class CandleDataFetcher {
         return krakenCandles;
       }
     } catch (error: any) {
-      console.log(`Kraken 4H failed for ${coinSymbol}, trying Binance...`);
+      console.log(`Kraken 4H failed for ${coinSymbol}, trying old Binance service...`);
     }
 
-    // 3. Try Binance
+    // 4. Try old Binance service (fallback)
     try {
       const binanceCandles = await binanceService.get4HourCandlesByCoinId(
         coinId,
@@ -271,11 +308,11 @@ export class CandleDataFetcher {
       );
 
       if (binanceCandles && binanceCandles.length >= 30) {
-        console.log(`✅ Fetched ${binanceCandles.length} 4H candles from Binance for ${coinSymbol}`);
+        console.log(`✅ Fetched ${binanceCandles.length} 4H candles from Binance service for ${coinSymbol}`);
         return binanceCandles;
       }
     } catch (error: any) {
-      console.log(`Binance 4H failed for ${coinSymbol}, trying CoinGecko...`);
+      console.log(`Binance service 4H failed for ${coinSymbol}, trying CoinGecko...`);
     }
 
     // 4. Fallback: CoinGecko OHLC (daily data - approximate)

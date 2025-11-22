@@ -396,15 +396,16 @@ Provide your step-by-step analysis and recommendation:`,
   ): string {
     const insights: string[] = [];
 
-    insights.push(
-      `Technical analysis shows ${technicalSignal.type} with ${technicalSignal.confidence}% confidence`
-    );
+    // Don't show separate confidence here - it's shown in main signal
+    const strength = technicalSignal.confidence >= 70 ? 'strong' :
+                     technicalSignal.confidence >= 50 ? 'moderate' : 'weak';
+    insights.push(`${strength.charAt(0).toUpperCase() + strength.slice(1)} ${technicalSignal.type} signal on 1H timeframe`);
 
     if (fundamentalScore) {
       if (fundamentalScore.overallScore > 70) {
-        insights.push('Strong fundamentals support this position');
+        insights.push('Fundamentals supportive');
       } else if (fundamentalScore.overallScore < 40) {
-        insights.push('Weak fundamentals suggest caution');
+        insights.push('Weak fundamentals - use caution');
       }
     }
 

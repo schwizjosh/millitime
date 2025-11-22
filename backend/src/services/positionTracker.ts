@@ -1,7 +1,7 @@
 /**
  * Position Tracker Service
- * Automated 15-minute scalp trade management
- * Tracks positions and sends timely exit recommendations
+ * 1H trading with 15-minute position monitoring
+ * Matches 80% win rate backtest configuration
  */
 
 import { FastifyInstance } from 'fastify';
@@ -47,7 +47,7 @@ export class PositionTrackerService {
 
   /**
    * Start position tracking service
-   * Runs every 5 minutes (same as signal generation)
+   * Runs every 5 minutes (TIGHT monitoring for 0.5% scalp targets)
    */
   async start() {
     if (this.isRunning) {
@@ -56,14 +56,15 @@ export class PositionTrackerService {
     }
 
     this.isRunning = true;
-    this.fastify.log.info('Position Tracker Service started - checking every 5 minutes');
+    this.fastify.log.info('Position Tracker Service started - checking every 15 minutes (1H strategy)');
 
-    // Check positions every 5 minutes for rapid market monitoring
+    // Check positions every 15 minutes for 1H trade monitoring
+    // Matches backtest configuration with 80% win rate
     setInterval(() => {
       this.checkAllPositions().catch((error) => {
         this.fastify.log.error({ error }, 'Error checking positions');
       });
-    }, 5 * 60 * 1000); // 5 minutes
+    }, 15 * 60 * 1000); // 15 minutes
 
     // Initial check
     this.checkAllPositions().catch((error) => {
@@ -73,6 +74,7 @@ export class PositionTrackerService {
 
   /**
    * Create new active position when signal is generated
+   * Auto-enables tracking for MODERATE and STRONG signals
    */
   async createPosition(
     userId: number,
@@ -83,23 +85,27 @@ export class PositionTrackerService {
     entryPrice: number,
     stopLoss: number,
     takeProfit: number,
-    leverage: number = 3
+    leverage: number = 3,
+    signalStrength: 'STRONG' | 'MODERATE' | 'WEAK' = 'MODERATE'
   ): Promise<number> {
     const client = await this.fastify.pg.connect();
+
+    // Auto-enable tracking for MODERATE and STRONG signals only
+    const autoTrack = signalStrength === 'STRONG' || signalStrength === 'MODERATE';
 
     try {
       const result = await client.query(
         `INSERT INTO active_positions
          (user_id, signal_id, coin_id, coin_symbol, position, entry_price, current_price,
-          stop_loss, take_profit, leverage, status, entry_time)
-         VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, 'ACTIVE', CURRENT_TIMESTAMP)
+          stop_loss, take_profit, leverage, status, entry_time, tracking)
+         VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, 'ACTIVE', CURRENT_TIMESTAMP, $10)
          RETURNING id`,
-        [userId, signalId, coinId, coinSymbol, position, entryPrice, stopLoss, takeProfit, leverage]
+        [userId, signalId, coinId, coinSymbol, position, entryPrice, stopLoss, takeProfit, leverage, autoTrack]
       );
 
       const positionId = result.rows[0].id;
       this.fastify.log.info(
-        `📊 Created active position #${positionId}: ${position} ${coinSymbol} @ $${entryPrice} for user ${userId}`
+        `📊 Created active position #${positionId}: ${position} ${coinSymbol} @ $${entryPrice} for user ${userId} (tracking: ${autoTrack ? 'ON' : 'OFF'})`
       );
 
       return positionId;
@@ -115,10 +121,10 @@ export class PositionTrackerService {
     const client = await this.fastify.pg.connect();
 
     try {
-      // Get all active positions
+      // Get all active positions that are being tracked
       const result = await client.query<ActivePosition>(
         `SELECT * FROM active_positions
-         WHERE status = 'ACTIVE'
+         WHERE status = 'ACTIVE' AND tracking = TRUE
          ORDER BY entry_time ASC`
       );
 
@@ -182,8 +188,8 @@ export class PositionTrackerService {
     // Determine recommendation
     const recommendation = this.analyzePosition(position, currentPrice, pnl, minutesElapsed);
 
-    // Send 15-minute check-in (only once)
-    if (minutesElapsed >= 15 && !position.check_in_15min_sent) {
+    // Send 30-minute check-in for 1H trades (only once)
+    if (minutesElapsed >= 30 && !position.check_in_15min_sent) {
       await this.send15MinCheckIn(position, currentPrice, pnl, recommendation, settings);
 
       await client.query(
@@ -192,7 +198,7 @@ export class PositionTrackerService {
       );
     }
 
-    // Send urgent updates regardless of 15-min mark
+    // Send urgent updates regardless of check-in
     if (recommendation.urgency === 'URGENT') {
       // Check if we sent update recently (don't spam)
       const lastUpdate = position.last_update_sent ? new Date(position.last_update_sent) : null;
@@ -200,8 +206,8 @@ export class PositionTrackerService {
         ? (now.getTime() - lastUpdate.getTime()) / (1000 * 60)
         : 999;
 
-      if (minutesSinceLastUpdate > 2) {
-        // Only send if more than 2 min since last update
+      if (minutesSinceLastUpdate > 10) {
+        // Only send if more than 10 min since last update (was 2 min for scalping)
         await this.sendUrgentUpdate(position, currentPrice, pnl, recommendation, settings);
 
         await client.query(
@@ -211,8 +217,8 @@ export class PositionTrackerService {
       }
     }
 
-    // Auto-close position after 30 minutes
-    if (minutesElapsed >= 30 && position.status === 'ACTIVE') {
+    // Auto-close position after 60 minutes (1H trade horizon)
+    if (minutesElapsed >= 60 && position.status === 'ACTIVE') {
       await this.sendForceExitRecommendation(position, currentPrice, pnl, settings);
 
       await client.query(
@@ -223,7 +229,7 @@ export class PositionTrackerService {
       );
 
       this.fastify.log.info(
-        `⏰ Position #${position.id} expired after 30 minutes (${position.coin_symbol})`
+        `⏰ Position #${position.id} expired after 60 minutes (${position.coin_symbol})`
       );
     }
   }
@@ -277,17 +283,17 @@ export class PositionTrackerService {
       };
     }
 
-    // Scenario 4: Sideways at 15-min mark (< 0.3% movement)
-    if (minutesElapsed >= 15 && Math.abs(pnl.percent) < 0.3) {
+    // Scenario 4: Sideways at 30-min mark (< 0.5% movement) for 1H trades
+    if (minutesElapsed >= 30 && Math.abs(pnl.percent) < 0.5) {
       return {
         action: 'CLOSE_FULL',
-        reason: '15 minutes elapsed with minimal movement. Exit to preserve capital.',
+        reason: '30 minutes elapsed with minimal movement. Consider exiting.',
         urgency: 'MEDIUM',
       };
     }
 
-    // Scenario 5: Profitable and at 15-min mark (move to breakeven)
-    if (minutesElapsed >= 15 && pnl.percent > 0.2 && progressToTP < 75) {
+    // Scenario 5: Profitable and at 30-min mark (move to breakeven)
+    if (minutesElapsed >= 30 && pnl.percent > 0.3 && progressToTP < 75) {
       return {
         action: 'TRAIL_STOP',
         reason: 'In profit. Move stop to breakeven to secure position.',
@@ -315,7 +321,7 @@ export class PositionTrackerService {
   }
 
   /**
-   * Send 15-minute check-in message
+   * Send 30-minute check-in message (for 1H trades)
    */
   private async send15MinCheckIn(
     position: ActivePosition,
@@ -340,7 +346,7 @@ export class PositionTrackerService {
       ? '📊'
       : '✅';
 
-    let message = `${emoji} *15-MIN CHECK-IN*\n`;
+    let message = `${emoji} *30-MIN CHECK-IN*\n`;
     message += `⏰ ${timeStr}\n`;
     message += `━━━━━━━━━━━━━━━━\n\n`;
 
@@ -378,7 +384,7 @@ export class PositionTrackerService {
     });
 
     this.fastify.log.info(
-      `📱 15-min check-in sent for position #${position.id} (${position.coin_symbol})`
+      `📱 30-min check-in sent for position #${position.id} (${position.coin_symbol})`
     );
   }
 
@@ -448,7 +454,7 @@ export class PositionTrackerService {
       hour12: true,
     });
 
-    let message = `⏰ *30-MIN AUTO-EXIT*\n`;
+    let message = `⏰ *60-MIN AUTO-EXIT*\n`;
     message += `⏰ ${timeStr}\n`;
     message += `━━━━━━━━━━━━━━━━\n\n`;
 
@@ -457,10 +463,10 @@ export class PositionTrackerService {
     message += `P/L: ${pnl.usd > 0 ? '+' : ''}$${pnl.usd.toFixed(2)}\n\n`;
 
     message += `⏱️ *TIME LIMIT REACHED*\n`;
-    message += `30 minutes elapsed - scalp trade window closed.\n\n`;
+    message += `60 minutes elapsed - 1H trade window closed.\n\n`;
 
     message += `ACTION: Exit position now\n`;
-    message += `REASON: Risk management - don't hold scalp trades too long\n\n`;
+    message += `REASON: Risk management - trade horizon exceeded\n\n`;
 
     message += `━━━━━━━━━━━━━━━━\n`;
     message += `_Position auto-closed by tracker_`;

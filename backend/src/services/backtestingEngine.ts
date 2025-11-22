@@ -136,7 +136,7 @@ export class BacktestingEngine {
         );
 
         if (signal && (signal.type === 'BUY' || signal.type === 'SELL')) {
-          // Calculate position size
+          // Calculate position size using REAL chart levels
           const futuresParams = useFutures
             ? FuturesCalculator.calculatePosition({
                 signalType: signal.type,
@@ -144,6 +144,7 @@ export class BacktestingEngine {
                 technicalIndicators: signal.technicalIndicators,
                 confidence: signal.confidence,
                 volatility: signal.technicalIndicators.atr,
+                candles: historicalCandles, // Pass candles for real support/resistance
               })
             : null;
 
@@ -228,6 +229,8 @@ export class BacktestingEngine {
 
   /**
    * Fetch historical candle data for backtesting
+   * Automatically selects appropriate timeframe based on date range
+   * Includes extra candles for indicator warm-up (RSI, MACD, EMAs need history)
    */
   private async fetchHistoricalCandles(
     coinId: string,
@@ -235,9 +238,39 @@ export class BacktestingEngine {
     startDate: Date,
     endDate: Date
   ) {
-    // Use the existing candle data fetcher
-    // For backtesting, we need hourly or 4h candles for longer periods
-    return await candleDataFetcher.fetch15MinCandles(coinId, coinSymbol, 1000);
+    const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    this.fastify.log.info(`Fetching ${daysDiff} days of historical data for ${coinSymbol}`);
+
+    // IMPORTANT: Add 100 candles for indicator warm-up
+    // Technical indicators need history to calculate properly:
+    // - RSI: 14 periods
+    // - MACD: 26 periods
+    // - EMA 50: 50 periods
+    // - We use 100 to be safe for all indicators
+
+    // Choose appropriate timeframe based on span
+    if (daysDiff > 180) {
+      // For 6+ months, use daily candles (most reliable for long-term backtests)
+      const limit = Math.min(daysDiff + 100, 2000); // +100 for indicator warm-up
+      this.fastify.log.info(`Using DAILY candles (${limit} candles for ${daysDiff}-day backtest)`);
+      return await candleDataFetcher.fetchDailyCandles(coinId, coinSymbol, limit);
+    } else if (daysDiff > 30) {
+      // For 1-6 months, use 4H candles (good balance)
+      const limit = Math.min((daysDiff * 6) + 100, 2000); // +100 for warm-up
+      this.fastify.log.info(`Using 4H candles (${limit} candles for ${daysDiff}-day backtest)`);
+      return await candleDataFetcher.fetch4HourCandles(coinId, coinSymbol, limit);
+    } else if (daysDiff > 3) {
+      // For 3-30 days, use 1H candles (matches live trading strategy)
+      const limit = Math.min((daysDiff * 24) + 100, 2000); // +100 for warm-up
+      this.fastify.log.info(`Using 1H candles (${limit} candles for ${daysDiff}-day backtest)`);
+      return await candleDataFetcher.fetch1HourCandles(coinId, coinSymbol, limit);
+    } else {
+      // For < 3 days, use 15min candles (high granularity)
+      const limit = Math.min((daysDiff * 96) + 100, 2000); // +100 for warm-up
+      this.fastify.log.info(`Using 15MIN candles (${limit} candles for ${daysDiff}-day backtest)`);
+      return await candleDataFetcher.fetch15MinCandles(coinId, coinSymbol, limit);
+    }
   }
 
   /**
@@ -393,6 +426,162 @@ export class BacktestingEngine {
     // Annualized Sharpe Ratio (assuming 365 trading days)
     const sharpe = (avgReturn / stdDev) * Math.sqrt(365);
     return sharpe;
+  }
+
+  /**
+   * Run rolling window backtest (Option C - Most Accurate)
+   * Breaks a long period into smaller windows and aggregates results
+   * Perfect for backtesting 5+ years while using 1H candles
+   *
+   * @param params - Backtest parameters
+   * @param windowDays - Size of each window in days (default: 30)
+   * @param windowStepDays - Days to step forward for next window (default: 30, no overlap)
+   */
+  async runRollingWindowBacktest(
+    params: BacktestParams,
+    windowDays: number = 30,
+    windowStepDays: number = 30
+  ): Promise<{
+    aggregatedResult: BacktestResult;
+    windowResults: BacktestResult[];
+  }> {
+    const { coinId, coinSymbol, startDate, endDate, initialBalance } = params;
+
+    this.fastify.log.info(
+      `Starting rolling window backtest for ${coinSymbol}: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`
+    );
+    this.fastify.log.info(`Window size: ${windowDays} days, Step: ${windowStepDays} days`);
+
+    const windowResults: BacktestResult[] = [];
+    let currentStart = new Date(startDate);
+    const totalEnd = new Date(endDate);
+    let windowNumber = 1;
+    let cumulativeBalance = initialBalance;
+
+    // Run backtests in rolling windows
+    while (currentStart < totalEnd) {
+      const currentEnd = new Date(currentStart);
+      currentEnd.setDate(currentEnd.getDate() + windowDays);
+
+      // Don't exceed final end date
+      if (currentEnd > totalEnd) {
+        currentEnd.setTime(totalEnd.getTime());
+      }
+
+      this.fastify.log.info(
+        `\n📊 Window #${windowNumber}: ${currentStart.toISOString().split('T')[0]} to ${currentEnd.toISOString().split('T')[0]}`
+      );
+
+      try {
+        // Run backtest for this window using cumulative balance
+        const windowResult = await this.runBacktest({
+          ...params,
+          startDate: currentStart,
+          endDate: currentEnd,
+          initialBalance: cumulativeBalance, // Use ending balance from previous window
+        });
+
+        windowResults.push(windowResult);
+
+        // Update cumulative balance for next window
+        cumulativeBalance = windowResult.finalBalance;
+
+        this.fastify.log.info(
+          `✅ Window #${windowNumber}: ${windowResult.totalTrades} trades, ` +
+          `Win rate: ${windowResult.winRate.toFixed(1)}%, ` +
+          `P&L: ${windowResult.profitLossPercentage.toFixed(2)}%, ` +
+          `Balance: $${cumulativeBalance.toFixed(2)}`
+        );
+      } catch (error: any) {
+        this.fastify.log.error(
+          `❌ Window #${windowNumber} failed: ${error.message}`
+        );
+        // Continue with next window even if one fails
+      }
+
+      // Move to next window
+      currentStart = new Date(currentStart);
+      currentStart.setDate(currentStart.getDate() + windowStepDays);
+      windowNumber++;
+    }
+
+    // Aggregate all trades across windows
+    const allTrades: BacktestTrade[] = [];
+    windowResults.forEach((result) => {
+      allTrades.push(...result.trades);
+    });
+
+    // Calculate aggregate statistics
+    const winningTrades = allTrades.filter((t) => t.profitLoss > 0);
+    const losingTrades = allTrades.filter((t) => t.profitLoss < 0);
+    const winRate = allTrades.length > 0 ? (winningTrades.length / allTrades.length) * 100 : 0;
+    const totalProfitLoss = cumulativeBalance - initialBalance;
+    const profitLossPercentage = ((totalProfitLoss / initialBalance) * 100);
+
+    const averageWin =
+      winningTrades.length > 0
+        ? winningTrades.reduce((sum, t) => sum + t.profitLoss, 0) / winningTrades.length
+        : 0;
+    const averageLoss =
+      losingTrades.length > 0
+        ? Math.abs(losingTrades.reduce((sum, t) => sum + t.profitLoss, 0) / losingTrades.length)
+        : 0;
+
+    const largestWin = winningTrades.length > 0 ? Math.max(...winningTrades.map((t) => t.profitLoss)) : 0;
+    const largestLoss = losingTrades.length > 0 ? Math.min(...losingTrades.map((t) => t.profitLoss)) : 0;
+
+    // Calculate max drawdown across all windows
+    let peakBalance = initialBalance;
+    let maxDrawdown = 0;
+    windowResults.forEach((result) => {
+      if (result.finalBalance > peakBalance) {
+        peakBalance = result.finalBalance;
+      }
+      const drawdown = ((peakBalance - result.finalBalance) / peakBalance) * 100;
+      maxDrawdown = Math.max(maxDrawdown, drawdown);
+    });
+
+    const sharpeRatio = this.calculateSharpeRatio(allTrades, initialBalance);
+
+    const aggregatedResult: BacktestResult = {
+      coinId,
+      coinSymbol,
+      startDate,
+      endDate,
+      initialBalance,
+      finalBalance: cumulativeBalance,
+      totalTrades: allTrades.length,
+      winningTrades: winningTrades.length,
+      losingTrades: losingTrades.length,
+      winRate,
+      totalProfitLoss,
+      profitLossPercentage,
+      maxDrawdown,
+      sharpeRatio,
+      averageWin,
+      averageLoss,
+      largestWin,
+      largestLoss,
+      trades: allTrades,
+    };
+
+    this.fastify.log.info('\n' + '='.repeat(80));
+    this.fastify.log.info('📈 ROLLING WINDOW BACKTEST COMPLETE');
+    this.fastify.log.info('='.repeat(80));
+    this.fastify.log.info(`Period: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    this.fastify.log.info(`Windows completed: ${windowResults.length}`);
+    this.fastify.log.info(`Total trades: ${allTrades.length}`);
+    this.fastify.log.info(`Win rate: ${winRate.toFixed(2)}%`);
+    this.fastify.log.info(`Total P&L: $${totalProfitLoss.toFixed(2)} (${profitLossPercentage.toFixed(2)}%)`);
+    this.fastify.log.info(`Initial: $${initialBalance} → Final: $${cumulativeBalance.toFixed(2)}`);
+    this.fastify.log.info(`Max Drawdown: ${maxDrawdown.toFixed(2)}%`);
+    this.fastify.log.info(`Sharpe Ratio: ${sharpeRatio.toFixed(2)}`);
+    this.fastify.log.info('='.repeat(80));
+
+    return {
+      aggregatedResult,
+      windowResults,
+    };
   }
 
   /**

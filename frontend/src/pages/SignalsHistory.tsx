@@ -120,7 +120,7 @@ export default function SignalsHistory() {
 
               <div className="signal-body">
                 <div className="signal-price">
-                  Price: <strong>${typeof signal.price === 'number' ? signal.price.toFixed(2) : 'N/A'}</strong>
+                  Price: <strong>${signal.price ? Number(signal.price).toFixed(Number(signal.price) < 1 ? 6 : 2) : 'N/A'}</strong>
                 </div>
 
                 {/* Futures Trading Parameters */}
@@ -163,14 +163,14 @@ export default function SignalsHistory() {
 
                 {signal.indicators && (
                   <div className="signal-indicators">
-                    {signal.indicators.rsi && (
+                    {signal.indicators.rsi != null && (
                       <div className="indicator">
-                        <span>RSI:</span> {typeof signal.indicators.rsi === 'number' ? signal.indicators.rsi.toFixed(2) : 'N/A'}
+                        <span>RSI:</span> {Number(signal.indicators.rsi).toFixed(2)}
                       </div>
                     )}
-                    {signal.indicators.macd && (
+                    {signal.indicators.macd?.MACD != null && (
                       <div className="indicator">
-                        <span>MACD:</span> {typeof signal.indicators.macd.MACD === 'number' ? signal.indicators.macd.MACD.toFixed(4) : 'N/A'}
+                        <span>MACD:</span> {Number(signal.indicators.macd.MACD).toFixed(4)}
                       </div>
                     )}
                   </div>

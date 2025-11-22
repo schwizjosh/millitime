@@ -18,7 +18,8 @@ export interface FearGreedIndex {
 export interface BTCDominance {
   value: number; // 0-100 percentage
   isRising: boolean;
-  change24h: number;
+  change24h: number; // Overall market change (proxy)
+  phase: 'ALTSEASON' | 'PRE_ALTSEASON' | 'TRANSITION' | 'BTC_SEASON' | 'STRONG_BTC_SEASON';
 }
 
 export interface MarketContext {
@@ -102,10 +103,16 @@ export class MarketContextService {
       const currentDominance = globalData.data.market_cap_percentage.btc;
       const change24h = globalData.data.market_cap_change_percentage_24h_usd || 0;
 
+      // Classify dominance phase based on research:
+      // < 54%: Altcoin Season, 54-57%: Pre-Altseason, 57-60%: Transition
+      // 60-65%: BTC Season, > 65%: Strong BTC Season
+      const phase = this.classifyDominancePhase(currentDominance);
+
       const btcDominance: BTCDominance = {
         value: currentDominance,
         isRising: change24h > 0,
         change24h,
+        phase,
       };
 
       // Cache result
@@ -151,20 +158,52 @@ export class MarketContextService {
       }
     }
 
-    // Analyze BTC Dominance for altcoins
+    // Analyze BTC Dominance for altcoins - STRICTER FILTERING
+    // Based on research: altcoin season < 54%, BTC season > 60%
     if (btcDominance && coinSymbol && coinSymbol !== 'BTC') {
-      if (btcDominance.isRising && btcDominance.change24h > 1) {
-        warnings.push(
-          `BTC dominance rising (${btcDominance.value.toFixed(1)}%) - altcoins may underperform`
-        );
-        confidenceAdjustment -= 10;
+      const phase = btcDominance.phase;
 
+      if (phase === 'STRONG_BTC_SEASON') {
+        // > 65% dominance - very risky for altcoins
+        warnings.push(
+          `⚠️ Strong BTC Season (${btcDominance.value.toFixed(1)}%) - altcoins high risk`
+        );
+        confidenceAdjustment -= 25;
+        recommendedAction = 'AVOID';
+      } else if (phase === 'BTC_SEASON') {
+        // 60-65% dominance - unfavorable for altcoins
+        warnings.push(
+          `BTC Season (${btcDominance.value.toFixed(1)}%) - altcoins underperforming`
+        );
+        confidenceAdjustment -= 15;
         if (recommendedAction === 'PROCEED') {
           recommendedAction = 'CAUTION';
         }
-      } else if (btcDominance.value > 60) {
-        warnings.push(`High BTC dominance (${btcDominance.value.toFixed(1)}%) - altcoin risk`);
-        confidenceAdjustment -= 5;
+      } else if (phase === 'TRANSITION') {
+        // 57-60% dominance - current zone, moderate risk
+        if (btcDominance.isRising) {
+          warnings.push(
+            `BTC dominance rising (${btcDominance.value.toFixed(1)}%) - altcoin caution`
+          );
+          confidenceAdjustment -= 10;
+          if (recommendedAction === 'PROCEED') {
+            recommendedAction = 'CAUTION';
+          }
+        } else {
+          warnings.push(
+            `Transition zone (${btcDominance.value.toFixed(1)}%) - monitor BTC dominance`
+          );
+          confidenceAdjustment -= 5;
+        }
+      } else if (phase === 'PRE_ALTSEASON') {
+        // 54-57% dominance - getting favorable
+        if (!btcDominance.isRising) {
+          // Dominance falling = good for altcoins
+          confidenceAdjustment += 5;
+        }
+      } else if (phase === 'ALTSEASON') {
+        // < 54% dominance - altcoins favored
+        confidenceAdjustment += 10;
       }
     }
 
@@ -198,6 +237,20 @@ export class MarketContextService {
   }
 
   /**
+   * Classify BTC dominance into market phase
+   * Based on historical data: altcoin season typically when BTC dom < 54%
+   */
+  private classifyDominancePhase(
+    dominance: number
+  ): 'ALTSEASON' | 'PRE_ALTSEASON' | 'TRANSITION' | 'BTC_SEASON' | 'STRONG_BTC_SEASON' {
+    if (dominance < 54) return 'ALTSEASON';
+    if (dominance < 57) return 'PRE_ALTSEASON';
+    if (dominance < 60) return 'TRANSITION';
+    if (dominance < 65) return 'BTC_SEASON';
+    return 'STRONG_BTC_SEASON';
+  }
+
+  /**
    * Get market context summary for logging
    */
   getSummary(context: MarketContext): string {
@@ -209,7 +262,7 @@ export class MarketContextService {
 
     if (context.btcDominance) {
       parts.push(
-        `BTC Dominance: ${context.btcDominance.value.toFixed(1)}% (${context.btcDominance.isRising ? '↑' : '↓'})`
+        `BTC Dom: ${context.btcDominance.value.toFixed(1)}% [${context.btcDominance.phase}] (${context.btcDominance.isRising ? '↑' : '↓'})`
       );
     }
 

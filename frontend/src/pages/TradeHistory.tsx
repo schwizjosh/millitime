@@ -6,7 +6,7 @@ import '../styles/TradeHistory.css';
 export default function TradeHistory() {
   const [positions, setPositions] = useState<TradingPosition[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'ALL' | 'CLOSED' | 'ACTIVE'>('CLOSED');
+  const [filter, setFilter] = useState<'ALL' | 'CLOSED' | 'ACTIVE'>('ALL');
   const [feedbackModal, setFeedbackModal] = useState<{
     isOpen: boolean;
     position: TradingPosition | null;
@@ -17,6 +17,17 @@ export default function TradeHistory() {
     user_notes: '',
   });
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
+
+  // Close position modal state
+  const [closeModal, setCloseModal] = useState<{
+    isOpen: boolean;
+    position: TradingPosition | null;
+  }>({ isOpen: false, position: null });
+  const [closeForm, setCloseForm] = useState({
+    entry_price: '',
+    exit_price: '',
+  });
+  const [closingPosition, setClosingPosition] = useState(false);
 
   useEffect(() => {
     fetchPositions();
@@ -76,6 +87,56 @@ export default function TradeHistory() {
     }
   };
 
+  // Close position modal functions
+  const openCloseModal = (position: TradingPosition) => {
+    setCloseModal({ isOpen: true, position });
+    setCloseForm({
+      entry_price: String(position.entry_price),
+      exit_price: '',
+    });
+  };
+
+  const closeCloseModal = () => {
+    setCloseModal({ isOpen: false, position: null });
+    setCloseForm({ entry_price: '', exit_price: '' });
+  };
+
+  const submitClosePosition = async () => {
+    if (!closeModal.position) return;
+
+    if (!closeForm.exit_price) {
+      alert('Please enter an exit price');
+      return;
+    }
+
+    try {
+      setClosingPosition(true);
+      await positionsAPI.closePosition(closeModal.position.id, {
+        entry_price: parseFloat(closeForm.entry_price),
+        exit_price: parseFloat(closeForm.exit_price),
+      });
+
+      // Refresh positions
+      await fetchPositions();
+      closeCloseModal();
+    } catch (error) {
+      console.error('Failed to close position:', error);
+      alert('Failed to close position. Please try again.');
+    } finally {
+      setClosingPosition(false);
+    }
+  };
+
+  const toggleTracking = async (position: TradingPosition) => {
+    try {
+      await positionsAPI.toggleTracking(position.id, !position.tracking);
+      await fetchPositions();
+    } catch (error) {
+      console.error('Failed to toggle tracking:', error);
+      alert('Failed to toggle tracking. Please try again.');
+    }
+  };
+
   const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleString('en-US', {
       month: 'short',
@@ -100,6 +161,7 @@ export default function TradeHistory() {
       TIME_EXPIRED: { color: '#f59e0b', text: 'Time Expired' },
       REVERSAL: { color: '#8b5cf6', text: 'Reversal' },
       MANUAL: { color: '#6b7280', text: 'Manual Close' },
+      MANUAL_CLOSE: { color: '#3b82f6', text: 'Manual Close' },
     };
 
     const badge = badges[reason] || { color: '#6b7280', text: reason };
@@ -220,14 +282,32 @@ export default function TradeHistory() {
                     </div>
                   )}
 
-                  {position.status === 'CLOSED' && (
-                    <button
-                      className="feedback-button"
-                      onClick={() => openFeedbackModal(position)}
-                    >
-                      {position.user_feedback ? 'Update Feedback' : 'Add Feedback'}
-                    </button>
-                  )}
+                  <div className="position-actions">
+                    {position.status === 'ACTIVE' && (
+                      <>
+                        <button
+                          className={`tracking-button ${position.tracking ? 'tracking-active' : ''}`}
+                          onClick={() => toggleTracking(position)}
+                        >
+                          {position.tracking ? '📍 Tracking ON' : '📍 Start Tracking'}
+                        </button>
+                        <button
+                          className="close-trade-button"
+                          onClick={() => openCloseModal(position)}
+                        >
+                          Close Trade
+                        </button>
+                      </>
+                    )}
+                    {position.status === 'CLOSED' && (
+                      <button
+                        className="feedback-button"
+                        onClick={() => openFeedbackModal(position)}
+                      >
+                        {position.user_feedback ? 'Update Feedback' : 'Add Feedback'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))
@@ -299,6 +379,87 @@ export default function TradeHistory() {
                   disabled={submittingFeedback}
                 >
                   {submittingFeedback ? 'Submitting...' : 'Submit Feedback'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Close Position Modal */}
+        {closeModal.isOpen && closeModal.position && (
+          <div className="modal-overlay" onClick={closeCloseModal}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Close Trade</h2>
+                <button className="modal-close" onClick={closeCloseModal}>×</button>
+              </div>
+
+              <div className="modal-body">
+                <div className="close-position-info">
+                  <p>
+                    <strong>{closeModal.position.coin_symbol.toUpperCase()}</strong>
+                    {' - '}
+                    <span style={{ color: closeModal.position.position_type === 'LONG' ? '#10b981' : '#ef4444' }}>
+                      {closeModal.position.position_type} {closeModal.position.leverage}x
+                    </span>
+                  </p>
+                </div>
+
+                <div className="feedback-section">
+                  <label>Entry Price</label>
+                  <input
+                    type="number"
+                    step="any"
+                    className="price-input"
+                    value={closeForm.entry_price}
+                    onChange={(e) => setCloseForm({ ...closeForm, entry_price: e.target.value })}
+                    placeholder="Actual entry price"
+                  />
+                  <span className="hint">Adjust if different from signal price</span>
+                </div>
+
+                <div className="feedback-section">
+                  <label>Exit Price *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    className="price-input"
+                    value={closeForm.exit_price}
+                    onChange={(e) => setCloseForm({ ...closeForm, exit_price: e.target.value })}
+                    placeholder="Your exit price"
+                  />
+                </div>
+
+                {closeForm.entry_price && closeForm.exit_price && (
+                  <div className="pnl-preview">
+                    {(() => {
+                      const entry = parseFloat(closeForm.entry_price);
+                      const exit = parseFloat(closeForm.exit_price);
+                      const leverage = closeModal.position.leverage || 1;
+                      const isLong = closeModal.position.position_type === 'LONG';
+                      const pnl = isLong
+                        ? ((exit - entry) / entry) * 100 * leverage
+                        : ((entry - exit) / entry) * 100 * leverage;
+                      return (
+                        <p style={{ color: pnl >= 0 ? '#10b981' : '#ef4444' }}>
+                          Estimated P/L: {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
+                        </p>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer">
+                <button className="cancel-button" onClick={closeCloseModal}>
+                  Cancel
+                </button>
+                <button
+                  className="submit-button close-submit"
+                  onClick={submitClosePosition}
+                  disabled={closingPosition}
+                >
+                  {closingPosition ? 'Closing...' : 'Close Position'}
                 </button>
               </div>
             </div>
