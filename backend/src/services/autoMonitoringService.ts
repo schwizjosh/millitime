@@ -19,7 +19,18 @@ interface AutoMonitoringConfig {
   nascentUniquenessScore: number;
   hoursBeforeRecheck: number;
   maxMonitoringDays: number;
+  maxTotalAutoMonitoredCoins: number; // Maximum coins a user can auto-monitor
 }
+
+// Cache for top coins data to reduce API calls
+interface TopCoinsCache {
+  data: any[];
+  timestamp: number;
+}
+
+// Default max coins limit
+const DEFAULT_MAX_AUTO_MONITORED_COINS = 25;
+const TOP_COINS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache TTL
 
 interface CoinMetrics {
   coinId: string;
@@ -53,12 +64,67 @@ export default class AutoMonitoringService {
   private fastify: FastifyInstance;
   private coingeckoService: CoinGeckoService;
   private isRunning = false;
+  private isScanning = false; // Concurrent scan protection
   private scanTask?: cron.ScheduledTask;
   private validationTask?: cron.ScheduledTask;
+
+  // Shared cache for top coins data across all users (reduces API calls by ~95%)
+  private topCoinsCache: TopCoinsCache | null = null;
 
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
     this.coingeckoService = new CoinGeckoService();
+  }
+
+  /**
+   * Get cached top coins data or fetch fresh data if cache is stale
+   * This dramatically reduces API calls when scanning for multiple users
+   */
+  private async getCachedTopCoins(limit: number = 250): Promise<any[]> {
+    const now = Date.now();
+
+    // Return cached data if still valid
+    if (this.topCoinsCache && (now - this.topCoinsCache.timestamp) < TOP_COINS_CACHE_TTL_MS) {
+      this.fastify.log.info('Using cached top coins data');
+      return this.topCoinsCache.data;
+    }
+
+    // Fetch fresh data
+    this.fastify.log.info('Fetching fresh top coins data from CoinGecko');
+    const coins = await this.coingeckoService.getTopCoins(limit);
+
+    // Update cache
+    this.topCoinsCache = {
+      data: coins || [],
+      timestamp: now
+    };
+
+    return this.topCoinsCache.data;
+  }
+
+  /**
+   * Get the count of actively monitored coins for a user
+   */
+  private async getMonitoredCoinCount(userId: number): Promise<number> {
+    const result = await this.fastify.pg.query(
+      `SELECT COUNT(DISTINCT coin_id) as count FROM auto_monitored_coins
+       WHERE user_id = $1 AND is_active = true`,
+      [userId]
+    );
+    return parseInt(result.rows[0]?.count || '0');
+  }
+
+  /**
+   * Check if a coin is already being monitored (regardless of reason)
+   */
+  private async isAlreadyMonitored(userId: number, coinId: string): Promise<boolean> {
+    const result = await this.fastify.pg.query(
+      `SELECT 1 FROM auto_monitored_coins
+       WHERE user_id = $1 AND coin_id = $2 AND is_active = true
+       LIMIT 1`,
+      [userId, coinId]
+    );
+    return result.rows.length > 0;
   }
 
   /**
@@ -108,13 +174,25 @@ export default class AutoMonitoringService {
 
   /**
    * Main scan function to discover and monitor new coins
+   * Protected against concurrent execution
    */
   private async scanForNewCoins(): Promise<void> {
+    // Concurrent scan protection - prevent overlapping scans
+    if (this.isScanning) {
+      this.fastify.log.warn('Scan already in progress, skipping this run');
+      return;
+    }
+
+    this.isScanning = true;
+
     try {
       this.fastify.log.info('Scanning for new coins to auto-monitor...');
 
       // Get all users with auto-monitoring enabled
       const users = await this.getEnabledUsers();
+
+      // Pre-fetch top coins data once for all users (major API call reduction)
+      await this.getCachedTopCoins(250);
 
       for (const user of users) {
         try {
@@ -127,13 +205,29 @@ export default class AutoMonitoringService {
       this.fastify.log.info('Auto-monitoring scan completed');
     } catch (error: unknown) {
       this.fastify.log.error(error, 'Error in scanForNewCoins');
+    } finally {
+      this.isScanning = false;
     }
   }
 
   /**
    * Scan and monitor coins for a specific user
+   * Enforces max coins limit and prevents duplicate monitoring
    */
   private async scanForUser(config: AutoMonitoringConfig): Promise<void> {
+    // Get current monitored coin count for this user
+    const currentCount = await this.getMonitoredCoinCount(config.userId);
+    const maxCoins = config.maxTotalAutoMonitoredCoins || DEFAULT_MAX_AUTO_MONITORED_COINS;
+
+    // Check if user has reached their limit
+    if (currentCount >= maxCoins) {
+      this.fastify.log.info(
+        `User ${config.userId} has reached max monitored coins limit (${currentCount}/${maxCoins}), skipping scan`
+      );
+      return;
+    }
+
+    const remainingSlots = maxCoins - currentCount;
     const discoveries: Array<{ metrics: CoinMetrics; reason: string }> = [];
 
     // 1. Discover top gainers
@@ -160,23 +254,58 @@ export default class AutoMonitoringService {
       discoveries.push(...nascentCoins.map(metrics => ({ metrics, reason: 'nascent_trend' })));
     }
 
-    // Add discovered coins to monitoring
-    for (const { metrics, reason } of discoveries) {
-      await this.addToMonitoring(config.userId, metrics, reason);
+    // Deduplicate discoveries by coin_id (prevent same coin being added multiple times with different reasons)
+    const uniqueDiscoveries = new Map<string, { metrics: CoinMetrics; reason: string; score: number }>();
+    for (const discovery of discoveries) {
+      const existing = uniqueDiscoveries.get(discovery.metrics.coinId);
+      const score = discovery.metrics.trendScore || 0;
+
+      if (!existing || score > existing.score) {
+        // Keep the discovery with the highest trend score
+        uniqueDiscoveries.set(discovery.metrics.coinId, { ...discovery, score });
+      }
     }
 
-    this.fastify.log.info(`Scanned for user ${config.userId}: found ${discoveries.length} coins to monitor`);
+    // Convert back to array and sort by trend score
+    const sortedDiscoveries = Array.from(uniqueDiscoveries.values())
+      .sort((a, b) => b.score - a.score);
+
+    // Add discovered coins to monitoring (respecting remaining slots)
+    let addedCount = 0;
+    for (const { metrics, reason } of sortedDiscoveries) {
+      if (addedCount >= remainingSlots) {
+        this.fastify.log.info(
+          `User ${config.userId} reached max coins limit, ${sortedDiscoveries.length - addedCount} coins not added`
+        );
+        break;
+      }
+
+      // Check if already monitored (regardless of reason)
+      const alreadyMonitored = await this.isAlreadyMonitored(config.userId, metrics.coinId);
+      if (alreadyMonitored) {
+        this.fastify.log.debug(`Coin ${metrics.coinSymbol} already monitored for user ${config.userId}, skipping`);
+        continue;
+      }
+
+      await this.addToMonitoring(config.userId, metrics, reason);
+      addedCount++;
+    }
+
+    this.fastify.log.info(
+      `Scanned for user ${config.userId}: found ${sortedDiscoveries.length} unique coins, added ${addedCount} (limit: ${maxCoins})`
+    );
   }
 
   /**
    * Find top gaining coins in the last 24 hours
+   * Uses cached data to reduce API calls
    */
   private async findTopGainers(config: AutoMonitoringConfig): Promise<CoinMetrics[]> {
     try {
       this.fastify.log.info('Searching for top gainers...');
 
-      // Fetch top coins by market cap
-      const coins = await this.coingeckoService.getTopCoins(250); // Check top 250 coins
+      // Use cached top coins data (shared across all users)
+      const coins = await this.getCachedTopCoins(250);
 
       if (!coins || coins.length === 0) {
         return [];
@@ -210,13 +339,14 @@ export default class AutoMonitoringService {
 
   /**
    * Find top losing coins in the last 24 hours
+   * Uses cached data to reduce API calls
    */
   private async findTopLosers(config: AutoMonitoringConfig): Promise<CoinMetrics[]> {
     try {
       this.fastify.log.info('Searching for top losers...');
 
-      // Fetch top coins by market cap
-      const coins = await this.coingeckoService.getTopCoins(250);
+      // Use cached top coins data (shared across all users)
+      const coins = await this.getCachedTopCoins(250);
 
       if (!coins || coins.length === 0) {
         return [];
@@ -318,14 +448,56 @@ export default class AutoMonitoringService {
   }
 
   /**
+   * Check if a coin meets the volume increase threshold by comparing current vs historical volume
+   * This actually uses the nascentVolumeIncreasePercent config parameter
+   */
+  private async checkVolumeIncrease(coinId: string, thresholdPercent: number): Promise<{ meetsThreshold: boolean; volumeIncreasePercent: number }> {
+    try {
+      // Fetch 7-day market chart to get historical volume data
+      const chartData = await this.coingeckoService.getMarketChart(coinId, 7);
+
+      if (!chartData?.total_volumes || chartData.total_volumes.length < 2) {
+        return { meetsThreshold: false, volumeIncreasePercent: 0 };
+      }
+
+      const volumes = chartData.total_volumes as [number, number][];
+
+      // Calculate average volume for the first 6 days
+      const historicalVolumes = volumes.slice(0, -24); // Exclude last 24 hours
+      if (historicalVolumes.length === 0) {
+        return { meetsThreshold: false, volumeIncreasePercent: 0 };
+      }
+
+      const avgHistoricalVolume = historicalVolumes.reduce((sum, [_, vol]) => sum + vol, 0) / historicalVolumes.length;
+
+      // Get last 24 hours average volume
+      const recentVolumes = volumes.slice(-24);
+      const avgRecentVolume = recentVolumes.reduce((sum, [_, vol]) => sum + vol, 0) / recentVolumes.length;
+
+      if (avgHistoricalVolume === 0) {
+        return { meetsThreshold: false, volumeIncreasePercent: 0 };
+      }
+
+      const volumeIncreasePercent = ((avgRecentVolume - avgHistoricalVolume) / avgHistoricalVolume) * 100;
+      const meetsThreshold = volumeIncreasePercent >= thresholdPercent;
+
+      return { meetsThreshold, volumeIncreasePercent };
+    } catch (error) {
+      this.fastify.log.error(error, `Error checking volume increase for ${coinId}`);
+      return { meetsThreshold: false, volumeIncreasePercent: 0 };
+    }
+  }
+
+  /**
    * Find coins with early nascent trends (unique patterns)
+   * Now actually uses nascentVolumeIncreasePercent config parameter
    */
   private async findNascentTrends(config: AutoMonitoringConfig): Promise<CoinMetrics[]> {
     try {
       this.fastify.log.info('Searching for nascent trends...');
 
-      // Get coins with recent volume and price increases
-      const coins = await this.coingeckoService.getTopCoins(200);
+      // Use cached top coins data (shared across all users)
+      const coins = await this.getCachedTopCoins(200);
 
       if (!coins || coins.length === 0) {
         return [];
@@ -333,13 +505,28 @@ export default class AutoMonitoringService {
 
       const nascentCoins: CoinMetrics[] = [];
 
-      for (const coin of coins) {
-        try {
-          // Check if coin meets nascent trend criteria
-          const meetsVolumeCriteria = coin.price_change_percentage_24h >= config.nascentPriceChangeMin &&
-                                       coin.price_change_percentage_24h < 30; // Not already mainstream
+      // First pass: filter by basic price criteria to minimize API calls for volume check
+      const candidates = coins.filter((coin: any) =>
+        coin.price_change_percentage_24h >= config.nascentPriceChangeMin &&
+        coin.price_change_percentage_24h < 30 // Not already mainstream
+      );
 
-          if (!meetsVolumeCriteria) continue;
+      this.fastify.log.info(`Found ${candidates.length} nascent trend candidates, checking volume increase...`);
+
+      for (const coin of candidates) {
+        try {
+          // Actually check volume increase using the nascentVolumeIncreasePercent config
+          const { meetsThreshold, volumeIncreasePercent } = await this.checkVolumeIncrease(
+            coin.id,
+            config.nascentVolumeIncreasePercent
+          );
+
+          if (!meetsThreshold) {
+            this.fastify.log.debug(
+              `${coin.symbol} volume increase ${volumeIncreasePercent.toFixed(1)}% below threshold ${config.nascentVolumeIncreasePercent}%`
+            );
+            continue;
+          }
 
           // Calculate uniqueness score based on multiple factors
           const volumeToMcapRatio = coin.total_volume / coin.market_cap;
@@ -695,7 +882,8 @@ export default class AutoMonitoringService {
         nascent_price_change_min as "nascentPriceChangeMin",
         nascent_uniqueness_score as "nascentUniquenessScore",
         hours_before_recheck as "hoursBeforeRecheck",
-        max_monitoring_days as "maxMonitoringDays"
+        max_monitoring_days as "maxMonitoringDays",
+        COALESCE(max_total_auto_monitored_coins, ${DEFAULT_MAX_AUTO_MONITORED_COINS}) as "maxTotalAutoMonitoredCoins"
       FROM auto_monitoring_config
       WHERE enable_top_gainers = true
          OR enable_top_losers = true
@@ -727,7 +915,8 @@ export default class AutoMonitoringService {
         nascent_price_change_min as "nascentPriceChangeMin",
         nascent_uniqueness_score as "nascentUniquenessScore",
         hours_before_recheck as "hoursBeforeRecheck",
-        max_monitoring_days as "maxMonitoringDays"
+        max_monitoring_days as "maxMonitoringDays",
+        COALESCE(max_total_auto_monitored_coins, ${DEFAULT_MAX_AUTO_MONITORED_COINS}) as "maxTotalAutoMonitoredCoins"
       FROM auto_monitoring_config
       WHERE user_id = $1
     `, [userId]);
