@@ -314,6 +314,7 @@ export class BacktestingEngine {
       fundamentalRecommendation: 'N/A',
       aiInsight: 'Backtest mode',
       aiRecommendation: 'HOLD',
+      aiUsed: false,
       overallScore: technicalSignal.confidence,
       reasoning: technicalSignal.signals || [],
       riskFactors: [],

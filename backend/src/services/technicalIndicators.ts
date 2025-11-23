@@ -39,6 +39,8 @@ export interface SignalResult {
   indicators: TechnicalIndicatorValues;
   signals: string[];
   message: string;
+  hasConflict?: boolean; // True if major indicators conflict (RSI vs MACD)
+  conflictReason?: string; // Description of the conflict
 }
 
 export class TechnicalIndicatorService {
@@ -190,6 +192,10 @@ export class TechnicalIndicatorService {
   /**
    * Multi-Strategy Confluence Signal Generator
    * Combines RSI, MACD, Bollinger Bands, and EMA for high-probability signals
+   *
+   * KEY PRINCIPLE: MACD is the trend/momentum filter
+   * - Bollinger Band signals require MACD confirmation (bounce vs breakdown)
+   * - RSI + MACD conflict = reduced confidence + AI review flag
    */
   generateConfluenceSignal(candles: CandleData[]): SignalResult | null {
     const indicators = this.calculateAllIndicators(candles);
@@ -201,47 +207,119 @@ export class TechnicalIndicatorService {
     const signals: string[] = [];
     let buyScore = 0;
     let sellScore = 0;
+    let hasConflict = false;
+    let conflictReason = '';
+
+    // FIRST: Determine MACD trend direction (this filters other signals)
+    const macdBullish = indicators.macd.MACD > indicators.macd.signal && indicators.macd.histogram > 0;
+    const macdBearish = indicators.macd.MACD < indicators.macd.signal && indicators.macd.histogram < 0;
+    const macdNeutral = !macdBullish && !macdBearish;
 
     // Strategy 1: RSI Analysis (Crypto optimized: 65/35 instead of 70/30)
+    let rsiBullish = false;
+    let rsiBearish = false;
+
     if (indicators.rsi < 35) {
+      rsiBullish = true;
       buyScore += 25;
       signals.push(`RSI oversold (${indicators.rsi.toFixed(2)})`);
     } else if (indicators.rsi < 40) {
+      rsiBullish = true;
       buyScore += 15;
       signals.push(`RSI approaching oversold (${indicators.rsi.toFixed(2)})`);
     } else if (indicators.rsi > 65) {
+      rsiBearish = true;
       sellScore += 25;
       signals.push(`RSI overbought (${indicators.rsi.toFixed(2)})`);
     } else if (indicators.rsi > 60) {
+      rsiBearish = true;
       sellScore += 15;
       signals.push(`RSI approaching overbought (${indicators.rsi.toFixed(2)})`);
     }
 
     // Strategy 2: MACD Crossover (Fast settings: 3/10/9)
-    if (indicators.macd.MACD > indicators.macd.signal && indicators.macd.histogram > 0) {
+    if (macdBullish) {
       buyScore += 25;
       signals.push('MACD bullish crossover');
-    } else if (indicators.macd.MACD < indicators.macd.signal && indicators.macd.histogram < 0) {
+    } else if (macdBearish) {
       sellScore += 25;
       signals.push('MACD bearish crossover');
     }
 
-    // Strategy 3: Bollinger Bands
+    // CONFLICT DETECTION: RSI vs MACD disagreement
+    // This is critical - oversold RSI with bearish MACD often means continued downtrend
+    if (rsiBullish && macdBearish) {
+      hasConflict = true;
+      conflictReason = 'RSI oversold but MACD bearish - potential continued downtrend';
+      // Penalty: reduce buy score, this is often a falling knife
+      buyScore -= 15;
+      sellScore += 10;
+      signals.push('⚠️ RSI/MACD conflict: bearish momentum despite oversold');
+    } else if (rsiBearish && macdBullish) {
+      hasConflict = true;
+      conflictReason = 'RSI overbought but MACD bullish - potential continued uptrend';
+      // Penalty: reduce sell score, strong momentum can push through overbought
+      sellScore -= 15;
+      buyScore += 10;
+      signals.push('⚠️ RSI/MACD conflict: bullish momentum despite overbought');
+    }
+
+    // Strategy 3: Bollinger Bands WITH MACD CONFIRMATION
+    // Key insight: Lower BB + bearish MACD = breakdown, not bounce
     const bbPosition = (currentPrice - indicators.bollingerBands.lower) /
                        (indicators.bollingerBands.upper - indicators.bollingerBands.lower);
 
     if (currentPrice <= indicators.bollingerBands.lower) {
-      buyScore += 30;
-      signals.push('Price at/below lower Bollinger Band');
+      if (macdBullish || macdNeutral) {
+        // MACD confirms potential bounce
+        buyScore += 30;
+        signals.push('Price at lower BB with MACD confirmation (bounce likely)');
+      } else {
+        // MACD bearish = breakdown, not bounce - this is a SELL signal
+        sellScore += 20;
+        signals.push('Price at lower BB but MACD bearish (breakdown risk)');
+        if (!hasConflict) {
+          hasConflict = true;
+          conflictReason = 'Lower BB touch with bearish MACD - breakdown vs bounce uncertainty';
+        }
+      }
     } else if (bbPosition < 0.3) {
-      buyScore += 20;
-      signals.push('Price near lower Bollinger Band');
+      if (macdBullish) {
+        buyScore += 20;
+        signals.push('Price near lower BB with bullish MACD');
+      } else if (macdBearish) {
+        // Near lower BB but bearish - cautious, reduced score
+        buyScore += 5;
+        signals.push('Price near lower BB (MACD not confirming bounce)');
+      } else {
+        buyScore += 10;
+        signals.push('Price near lower Bollinger Band');
+      }
     } else if (currentPrice >= indicators.bollingerBands.upper) {
-      sellScore += 30;
-      signals.push('Price at/above upper Bollinger Band');
+      if (macdBearish || macdNeutral) {
+        // MACD confirms potential reversal
+        sellScore += 30;
+        signals.push('Price at upper BB with MACD confirmation (reversal likely)');
+      } else {
+        // MACD bullish = breakout, not reversal - this could continue up
+        buyScore += 15;
+        signals.push('Price at upper BB but MACD bullish (breakout possible)');
+        if (!hasConflict) {
+          hasConflict = true;
+          conflictReason = 'Upper BB touch with bullish MACD - breakout vs reversal uncertainty';
+        }
+      }
     } else if (bbPosition > 0.7) {
-      sellScore += 20;
-      signals.push('Price near upper Bollinger Band');
+      if (macdBearish) {
+        sellScore += 20;
+        signals.push('Price near upper BB with bearish MACD');
+      } else if (macdBullish) {
+        sellScore += 5;
+        signals.push('Price near upper BB (MACD not confirming reversal)');
+      } else {
+        sellScore += 10;
+        signals.push('Price near upper Bollinger Band');
+      }
     }
 
     // Strategy 4: EMA Trend Confirmation
@@ -298,6 +376,10 @@ export class TechnicalIndicatorService {
       }
     }
 
+    // Ensure scores don't go negative
+    buyScore = Math.max(0, buyScore);
+    sellScore = Math.max(0, sellScore);
+
     // Determine signal type and strength based on confluence score
     const normalizedBuyScore = Math.min(Math.round(buyScore), 100);
     const normalizedSellScore = Math.min(Math.round(sellScore), 100);
@@ -307,26 +389,18 @@ export class TechnicalIndicatorService {
     let confidence: number;
     let message: string;
 
+    // Minimum 60% confidence required - NO WEAK SIGNALS
+    // STRONG: 80%+, MODERATE: 60-79%
     if (normalizedBuyScore > normalizedSellScore && normalizedBuyScore >= 60) {
       signalType = 'BUY';
-      strength = normalizedBuyScore >= 80 ? 'STRONG' : normalizedBuyScore >= 70 ? 'MODERATE' : 'WEAK';
+      strength = normalizedBuyScore >= 80 ? 'STRONG' : 'MODERATE';
       confidence = normalizedBuyScore;
       message = `${strength} BUY signal with ${normalizedBuyScore}% confluence: ${signals.join(', ')}`;
     } else if (normalizedSellScore > normalizedBuyScore && normalizedSellScore >= 60) {
       signalType = 'SELL';
-      strength = normalizedSellScore >= 80 ? 'STRONG' : normalizedSellScore >= 70 ? 'MODERATE' : 'WEAK';
+      strength = normalizedSellScore >= 80 ? 'STRONG' : 'MODERATE';
       confidence = normalizedSellScore;
       message = `${strength} SELL signal with ${normalizedSellScore}% confluence: ${signals.join(', ')}`;
-    } else if (normalizedBuyScore > normalizedSellScore && normalizedBuyScore >= 45) {
-      signalType = 'BUY';
-      strength = 'WEAK';
-      confidence = normalizedBuyScore;
-      message = `WEAK BUY signal with ${normalizedBuyScore}% confluence: ${signals.join(', ')}`;
-    } else if (normalizedSellScore > normalizedBuyScore && normalizedSellScore >= 45) {
-      signalType = 'SELL';
-      strength = 'WEAK';
-      confidence = normalizedSellScore;
-      message = `WEAK SELL signal with ${normalizedSellScore}% confluence: ${signals.join(', ')}`;
     } else {
       signalType = 'HOLD';
       strength = 'MODERATE';
@@ -341,6 +415,8 @@ export class TechnicalIndicatorService {
       indicators,
       signals,
       message,
+      hasConflict,
+      conflictReason,
     };
   }
 

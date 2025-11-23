@@ -317,22 +317,42 @@ export class AIProviderService {
 
   /**
    * Call Google Gemini API with tiered model strategy
-   * Priority: 2.5-Pro (CoT reasoning) → 2.5-Flash (speed) → OpenAI/Claude
+   * Priority: 2.5-Pro on ALL keys first → 2.5-Flash → OpenAI/Claude
+   * Only falls back to Flash when ALL keys have exhausted Pro quota
    */
   private async callGemini(messages: AIMessage[], maxTokens: number): Promise<AIResponse> {
-    //Try Gemini 2.5 Pro first (Chain of Thought reasoning)
-    try {
-      return await this.callGeminiModel(messages, maxTokens, 'gemini-2.5-pro');
-    } catch (proError: any) {
-      if (proError.message?.includes('429') || proError.message?.includes('quota') || proError.message?.includes('RATE_LIMIT')) {
-        console.log(`🔄 Gemini 2.5 Pro exhausted, falling back to Flash`);
-      } else {
-        console.log(`⚠️  Gemini 2.5 Pro failed (${proError.message}), trying Flash...`);
-      }
+    const totalKeys = this.geminiKeys.length || 1;
+    let proAttempts = 0;
+    let lastProError: any = null;
 
-      // Fallback to Gemini 2.5 Flash (higher limits, faster)
-      return await this.callGeminiModel(messages, maxTokens, 'gemini-2.5-flash');
+    // Try Gemini 2.5 Pro on ALL available keys first
+    while (proAttempts < totalKeys) {
+      try {
+        return await this.callGeminiModel(messages, maxTokens, 'gemini-2.5-pro');
+      } catch (proError: any) {
+        lastProError = proError;
+        proAttempts++;
+
+        const isRateLimit = proError.message?.includes('429') ||
+                           proError.message?.includes('quota') ||
+                           proError.message?.includes('RATE_LIMIT');
+
+        if (isRateLimit && proAttempts < totalKeys) {
+          console.log(`🔄 Gemini 2.5 Pro rate limited on key ${proAttempts}/${totalKeys}, trying next key...`);
+          continue; // Try next key with Pro
+        } else if (isRateLimit) {
+          console.log(`🛑 Gemini 2.5 Pro exhausted on ALL ${totalKeys} keys, falling back to Flash`);
+          break; // All keys exhausted, fall back to Flash
+        } else {
+          // Non-rate-limit error (API error, etc.) - fall back to Flash immediately
+          console.log(`⚠️  Gemini 2.5 Pro failed (${proError.message}), trying Flash...`);
+          break;
+        }
+      }
     }
+
+    // Fallback to Gemini 2.5 Flash (higher limits, faster)
+    return await this.callGeminiModel(messages, maxTokens, 'gemini-2.5-flash');
   }
 
   /**

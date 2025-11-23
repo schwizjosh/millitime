@@ -26,6 +26,7 @@ export interface EnhancedSignal {
   // AI Analysis
   aiInsight: string;
   aiRecommendation: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
+  aiUsed: boolean; // True if actual AI was called, false if rule-based
 
   // Combined
   overallScore: number; // Weighted combination
@@ -104,6 +105,7 @@ export class AITradingStrategyService {
     // 4. AI Strategy Selection (only when signals conflict or borderline)
     let aiInsight = '';
     let aiRecommendation: EnhancedSignal['aiRecommendation'] = 'HOLD';
+    let aiUsed = false; // Track if actual AI was called
     let finalType = technicalSignal.type;
     let finalStrength = technicalSignal.strength;
     let finalConfidence = overallScore;
@@ -112,7 +114,8 @@ export class AITradingStrategyService {
       technicalSignal.type,
       technicalScore,
       fundamentalScore,
-      includeAI
+      includeAI,
+      technicalSignal.hasConflict // Pass internal TA conflict flag
     );
 
     if (needsAIArbitration) {
@@ -128,6 +131,7 @@ export class AITradingStrategyService {
         aiInsight = aiResult.insight;
         aiRecommendation = aiResult.recommendation;
         tokensUsed += aiResult.tokensUsed;
+        aiUsed = true; // AI was actually called
 
         // AI can override if confidence is high
         if (aiResult.shouldOverride) {
@@ -139,11 +143,13 @@ export class AITradingStrategyService {
         console.error('AI decision failed:', error);
         aiInsight = 'AI analysis unavailable';
         aiRecommendation = 'HOLD';
+        aiUsed = false; // AI call failed
       }
     } else {
       // No AI needed - use rule-based insight
       aiInsight = this.generateRuleBasedInsight(technicalSignal, fundamentalScore);
       aiRecommendation = this.mapScoreToRecommendation(overallScore, finalType);
+      aiUsed = false; // Rule-based, not actual AI
     }
 
     // 5. Generate reasoning and risk factors
@@ -170,6 +176,7 @@ export class AITradingStrategyService {
       fundamentalRecommendation: fundamentalScore?.recommendation || 'N/A',
       aiInsight,
       aiRecommendation,
+      aiUsed,
       overallScore,
       reasoning,
       riskFactors,
@@ -186,12 +193,19 @@ export class AITradingStrategyService {
     technicalType: 'BUY' | 'SELL' | 'HOLD',
     technicalScore: number,
     fundamentalScore: FundamentalScore | null,
-    includeAI: boolean
+    includeAI: boolean,
+    hasInternalConflict?: boolean
   ): boolean {
     if (!includeAI) return false;
 
     // Use AI when:
-    // 1. Signals conflict (TA says BUY but FA says SELL)
+    // 1. Internal technical indicator conflicts (RSI vs MACD, BB breakdown vs bounce)
+    // This is critical - conflicting indicators need external analysis
+    if (hasInternalConflict) {
+      return true; // Internal TA conflict - need AI to analyze market context
+    }
+
+    // 2. Signals conflict (TA says BUY but FA says SELL)
     if (fundamentalScore) {
       const taIsBullish = technicalType === 'BUY';
       const faIsBullish = fundamentalScore.recommendation.includes('BUY');
@@ -200,12 +214,12 @@ export class AITradingStrategyService {
       }
     }
 
-    // 2. Borderline signals (40-60% confidence)
+    // 3. Borderline signals (40-60% confidence)
     if (technicalScore >= 40 && technicalScore <= 60) {
       return true; // Uncertainty - AI can help
     }
 
-    // 3. Very strong signals where AI can add nuance
+    // 4. Very strong signals where AI can add nuance
     if (technicalScore > 80 && fundamentalScore && fundamentalScore.overallScore > 75) {
       return true; // Strong signal - AI can identify optimal entry
     }

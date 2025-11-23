@@ -201,12 +201,11 @@ export class SignalGenerator {
       return null;
     }
 
-    // Only generate signals for BUY/SELL with at least 45% confluence
-    // or STRONG signals with 60%+ confluence
+    // Only generate signals for BUY/SELL with at least 60% confluence
+    // NO WEAK SIGNALS - minimum MODERATE (60%+)
     const shouldGenerateSignal =
       (confluenceSignal.type === 'BUY' || confluenceSignal.type === 'SELL') &&
-      (confluenceSignal.confidence >= 45 ||
-        (confluenceSignal.strength === 'STRONG' && confluenceSignal.confidence >= 60));
+      confluenceSignal.confidence >= 60;
 
     if (!shouldGenerateSignal && confluenceSignal.type !== 'HOLD') {
       return null;

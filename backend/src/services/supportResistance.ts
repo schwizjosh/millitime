@@ -25,6 +25,9 @@ export class SupportResistanceDetector {
   /**
    * Find swing points and key levels from recent candles
    * Used for REAL stop loss and take profit placement
+   *
+   * CRITICAL: Only finds LOCAL levels within reasonable range of current price
+   * Prevents using old historical highs/lows from when coin was at different price
    */
   static findSwingPoints(candles: CandleData[], lookback: number = 20): SwingPoints {
     if (candles.length < lookback) {
@@ -34,25 +37,37 @@ export class SupportResistanceDetector {
     const recentCandles = candles.slice(-lookback);
     const currentPrice = candles[candles.length - 1].close;
 
-    // Find swing lows and highs
+    // Maximum distance from current price to consider a level "local"
+    // For 1H scalping, levels beyond 10% are not relevant
+    const maxLevelDistance = currentPrice * 0.10; // 10% range
+
+    // Find swing lows and highs from recent candles only
     const swingLows = this.findSwingLows(recentCandles);
     const swingHighs = this.findSwingHighs(recentCandles);
 
+    // Filter to only LOCAL swing points (within range of current price)
+    const localSwingLows = swingLows.filter(
+      level => Math.abs(level - currentPrice) <= maxLevelDistance
+    );
+    const localSwingHighs = swingHighs.filter(
+      level => Math.abs(level - currentPrice) <= maxLevelDistance
+    );
+
     // Find nearest swing low below current price (for LONG stop loss)
-    const recentSwingLow = this.findNearestLevelBelow(currentPrice, swingLows) ||
+    const recentSwingLow = this.findNearestLevelBelow(currentPrice, localSwingLows) ||
       Math.min(...recentCandles.map(c => c.low));
 
     // Find nearest swing high above current price (for LONG take profit)
-    const recentSwingHigh = this.findNearestLevelAbove(currentPrice, swingHighs) ||
+    const recentSwingHigh = this.findNearestLevelAbove(currentPrice, localSwingHighs) ||
       Math.max(...recentCandles.map(c => c.high));
 
-    // Detect resistance levels above current price
-    const resistanceLevels = this.detectKeyLevels(candles, 'resistance');
+    // Detect resistance levels - only use recent candles to avoid old historical levels
+    const resistanceLevels = this.detectKeyLevels(recentCandles, 'resistance', currentPrice, maxLevelDistance);
     const nextResistance = this.findNearestLevelAbove(currentPrice,
       resistanceLevels.map(l => l.price)) || recentSwingHigh;
 
-    // Detect support levels below current price
-    const supportLevels = this.detectKeyLevels(candles, 'support');
+    // Detect support levels - only use recent candles to avoid old historical levels
+    const supportLevels = this.detectKeyLevels(recentCandles, 'support', currentPrice, maxLevelDistance);
     const nextSupport = this.findNearestLevelBelow(currentPrice,
       supportLevels.map(l => l.price)) || recentSwingLow;
 
@@ -124,10 +139,13 @@ export class SupportResistanceDetector {
   /**
    * Detect key support/resistance levels with clustering
    * Groups nearby levels (within 0.5%) and counts touches
+   * Only includes levels within maxDistance of currentPrice (LOCAL levels)
    */
   private static detectKeyLevels(
     candles: CandleData[],
-    type: 'support' | 'resistance'
+    type: 'support' | 'resistance',
+    currentPrice?: number,
+    maxDistance?: number
   ): SupportResistanceLevel[] {
     const levels: Map<number, SupportResistanceLevel> = new Map();
     const tolerance = 0.005; // 0.5% tolerance for level clustering
@@ -140,6 +158,14 @@ export class SupportResistanceDetector {
     // Find levels where price repeatedly tested
     for (let i = 0; i < prices.length; i++) {
       const price = prices[i];
+
+      // Skip prices outside local range if filtering enabled
+      if (currentPrice && maxDistance) {
+        if (Math.abs(price - currentPrice) > maxDistance) {
+          continue; // Price too far from current - not a local level
+        }
+      }
+
       let foundCluster = false;
 
       // Check if this price clusters with an existing level
@@ -164,9 +190,12 @@ export class SupportResistanceDetector {
       }
     }
 
-    // Filter to only strong levels (touched 3+ times)
+    // Filter to only strong levels (touched 2+ times for local levels)
+    // Reduced from 3 to 2 since we're working with fewer candles now
+    const minTouches = (currentPrice && maxDistance) ? 2 : 3;
+
     return Array.from(levels.values())
-      .filter(level => level.touches >= 3)
+      .filter(level => level.touches >= minTouches)
       .sort((a, b) => b.strength - a.strength)
       .slice(0, 5); // Top 5 strongest levels
   }

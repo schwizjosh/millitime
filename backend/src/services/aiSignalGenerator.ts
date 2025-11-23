@@ -628,9 +628,10 @@ export class AISignalGenerator {
       return null;
     }
 
+    // Minimum 60% confidence - NO WEAK SIGNALS
     const shouldGenerate =
       (technicalSignal.type === 'BUY' || technicalSignal.type === 'SELL') &&
-      technicalSignal.confidence >= 45;
+      technicalSignal.confidence >= 60;
 
     if (!shouldGenerate) {
       return null;
@@ -647,6 +648,7 @@ export class AISignalGenerator {
       fundamentalRecommendation: 'N/A',
       aiInsight: 'Technical analysis only (AI disabled)',
       aiRecommendation: 'HOLD',
+      aiUsed: false, // No AI in technical-only mode
       overallScore: technicalSignal.confidence,
       reasoning: technicalSignal.signals || [],
       riskFactors: [],
@@ -657,17 +659,18 @@ export class AISignalGenerator {
 
   /**
    * Determine if enhanced signal should be generated
+   * Minimum 60% confidence - NO WEAK SIGNALS
    */
   private shouldGenerateSignal(signal: EnhancedSignal): boolean {
     // Generate signal if:
     // 1. Strong signal (80%+)
-    // 2. Moderate/Weak BUY or SELL with reasonable confidence (50%+)
+    // 2. Moderate BUY or SELL (60%+)
     // 3. HOLD signals are suppressed unless very high confidence
     if (signal.type === 'HOLD') {
       return signal.overallScore >= 80; // Only show HOLD if very confident
     }
 
-    return signal.overallScore >= 45;
+    return signal.overallScore >= 60; // No weak signals
   }
 
   /**
@@ -706,9 +709,13 @@ export class AISignalGenerator {
       message += `Risk:Reward: ${futuresPosition.risk_reward_ratio}:1\n`;
     }
 
-    // AI insight
+    // Insight section - label based on whether actual AI was used
     if (signal.aiInsight && signal.aiInsight !== 'AI analysis unavailable') {
-      message += `\n🤖 *AI INSIGHT*\n${signal.aiInsight}\n`;
+      if (signal.aiUsed) {
+        message += `\n🤖 *AI INSIGHT*\n${signal.aiInsight}\n`;
+      } else {
+        message += `\n📈 *ANALYSIS*\n${signal.aiInsight}\n`;
+      }
     }
 
     // Technical signals

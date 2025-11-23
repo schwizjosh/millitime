@@ -241,6 +241,7 @@ export class FuturesCalculator {
    * Strategy: Target nearest resistance (LONG) or support (SHORT)
    * - Uses actual chart levels, not formulas!
    * - Quick exits at real barriers = faster compound gains
+   * - CRITICAL: Caps max TP distance to prevent unrealistic targets
    */
   private static calculateTakeProfit(
     entryPrice: number,
@@ -252,6 +253,16 @@ export class FuturesCalculator {
     // Calculate risk distance
     const riskDistance = Math.abs(entryPrice - stopLoss);
 
+    // CRITICAL: Maximum take profit distance (percentage from entry)
+    // For scalping on 1H timeframe, targets beyond 5% are unrealistic
+    // Max R:R capped at 5:1 to prevent using old historical highs/lows
+    const maxTPPercent = 0.05; // 5% max move target
+    const maxRiskReward = 5; // Max 5:1 R:R ratio
+    const maxTPDistance = Math.min(
+      entryPrice * maxTPPercent,
+      riskDistance * maxRiskReward
+    );
+
     let take_profit: number;
 
     if (position === 'LONG') {
@@ -261,16 +272,20 @@ export class FuturesCalculator {
         const profitDistance = resistanceTarget - entryPrice;
 
         // Use resistance level if it gives at least 1:1 risk/reward
-        if (profitDistance >= riskDistance) {
+        // AND is not too far away (prevents using old historical highs)
+        if (profitDistance >= riskDistance && profitDistance <= maxTPDistance) {
           take_profit = resistanceTarget;
+        } else if (profitDistance > maxTPDistance) {
+          // Resistance too far - cap at max TP distance
+          take_profit = entryPrice + maxTPDistance;
         } else {
           // Resistance too close - use minimum risk/reward instead
           take_profit = entryPrice + (riskDistance * 1.5);
         }
       } else {
         // No resistance data - fallback to risk/reward calculation
-        const targetRR = confidence >= 85 ? 2 : confidence >= 80 ? 1.5 : 1.5;
-        take_profit = entryPrice + (riskDistance * targetRR);
+        const targetRR = confidence >= 85 ? 2.5 : confidence >= 80 ? 2 : 1.5;
+        take_profit = entryPrice + (riskDistance * Math.min(targetRR, maxRiskReward));
       }
     } else {
       // For SHORT: Target nearest support level (REAL chart level!)
@@ -279,16 +294,20 @@ export class FuturesCalculator {
         const profitDistance = entryPrice - supportTarget;
 
         // Use support level if it gives at least 1:1 risk/reward
-        if (profitDistance >= riskDistance) {
+        // AND is not too far away (prevents using old historical lows)
+        if (profitDistance >= riskDistance && profitDistance <= maxTPDistance) {
           take_profit = supportTarget;
+        } else if (profitDistance > maxTPDistance) {
+          // Support too far - cap at max TP distance
+          take_profit = entryPrice - maxTPDistance;
         } else {
           // Support too close - use minimum risk/reward instead
           take_profit = entryPrice - (riskDistance * 1.5);
         }
       } else {
         // No support data - fallback to risk/reward calculation
-        const targetRR = confidence >= 85 ? 2 : confidence >= 80 ? 1.5 : 1.5;
-        take_profit = entryPrice - (riskDistance * targetRR);
+        const targetRR = confidence >= 85 ? 2.5 : confidence >= 80 ? 2 : 1.5;
+        take_profit = entryPrice - (riskDistance * Math.min(targetRR, maxRiskReward));
       }
     }
 
