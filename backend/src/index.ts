@@ -12,12 +12,14 @@ import { newsRoutes } from './routes/news';
 import aiUsageRoutes from './routes/ai-usage';
 import { positionsRoutes } from './routes/positions';
 import { mlRoutes } from './routes/ml';
+import { autoMonitoringRoutes } from './routes/autoMonitoring';
 import { SignalGenerator } from './services/signalGenerator';
 import { AISignalGenerator } from './services/aiSignalGenerator';
 import { SpotlightCoinsDiscoveryService } from './services/spotlightCoinsDiscovery';
 import { ExchangeIntegrationService } from './services/exchangeIntegration';
 import { AIProviderService } from './services/aiProvider';
 import { NewsAggregationService } from './services/newsAggregationService';
+import AutoMonitoringService from './services/autoMonitoringService';
 
 dotenv.config();
 
@@ -84,6 +86,8 @@ fastify.register(newsRoutes);
 fastify.register(positionsRoutes);
 fastify.register(mlRoutes);
 
+// Auto-monitoring routes will be registered after service initialization
+
 // Initialize AI provider globally for usage stats endpoint
 let globalAIProvider: AIProviderService | undefined;
 if (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY) {
@@ -140,6 +144,14 @@ const start = async () => {
     console.log('📰 Starting News Aggregation Service...');
     const newsService = new NewsAggregationService(fastify);
     newsService.start();
+
+    // Start Auto-Monitoring Service
+    console.log('🎯 Starting Auto-Monitoring Service...');
+    const autoMonitoringService = new AutoMonitoringService(fastify);
+    autoMonitoringService.start();
+
+    // Register auto-monitoring routes with service instance
+    await fastify.register(autoMonitoringRoutes, { autoMonitoringService });
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
