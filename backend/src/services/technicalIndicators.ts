@@ -389,14 +389,14 @@ export class TechnicalIndicatorService {
     let confidence: number;
     let message: string;
 
-    // Minimum 60% confidence required - NO WEAK SIGNALS
-    // STRONG: 80%+, MODERATE: 60-79%
-    if (normalizedBuyScore > normalizedSellScore && normalizedBuyScore >= 60) {
+    // Minimum 70% confidence required - NO WEAK SIGNALS
+    // STRONG: 80%+, MODERATE: 70-79%
+    if (normalizedBuyScore > normalizedSellScore && normalizedBuyScore >= 70) {
       signalType = 'BUY';
       strength = normalizedBuyScore >= 80 ? 'STRONG' : 'MODERATE';
       confidence = normalizedBuyScore;
       message = `${strength} BUY signal with ${normalizedBuyScore}% confluence: ${signals.join(', ')}`;
-    } else if (normalizedSellScore > normalizedBuyScore && normalizedSellScore >= 60) {
+    } else if (normalizedSellScore > normalizedBuyScore && normalizedSellScore >= 70) {
       signalType = 'SELL';
       strength = normalizedSellScore >= 80 ? 'STRONG' : 'MODERATE';
       confidence = normalizedSellScore;

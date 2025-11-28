@@ -1,8 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { authMiddleware } from '../middleware/auth';
 import { Signal } from '../types';
+import { SignalNotificationService } from '../services/signalNotificationService';
 
-export async function signalsRoutes(fastify: FastifyInstance) {
+export async function signalsRoutes(
+  fastify: FastifyInstance,
+  options?: { signalNotificationService?: SignalNotificationService }
+) {
+  const notificationService = options?.signalNotificationService;
   // Get user's signals
   fastify.get('/api/signals', { preHandler: authMiddleware }, async (request, reply) => {
     const userId = request.user!.id;
@@ -123,4 +128,76 @@ export async function signalsRoutes(fastify: FastifyInstance) {
       }
     }
   );
+
+  // Real-time signal stream via Server-Sent Events (SSE)
+  // Note: EventSource doesn't support custom headers, so we accept token as query param too
+  fastify.get('/api/signals/stream', async (request, reply) => {
+    // Try to get token from query param (for EventSource) or header (for regular auth)
+    const tokenFromQuery = (request.query as any).token;
+    const tokenFromHeader = request.headers.authorization?.replace('Bearer ', '');
+    const token = tokenFromQuery || tokenFromHeader;
+
+    if (!token) {
+      return reply.code(401).send({ error: 'Authentication required' });
+    }
+
+    // Verify token manually since we're not using the middleware
+    try {
+      const jwt = require('jsonwebtoken');
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+      const userId = decoded.id || decoded.userId;
+
+      if (!notificationService) {
+        return reply.code(503).send({ error: 'Real-time notifications not available' });
+      }
+
+      // Set SSE headers
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'X-Accel-Buffering': 'no', // Disable nginx buffering
+      });
+
+      // Register client with notification service
+      notificationService.addClient(userId, reply);
+
+      fastify.log.info(`User ${userId} connected to signal stream`);
+
+      // Send heartbeat every 30 seconds to keep connection alive
+      const heartbeatInterval = setInterval(() => {
+        try {
+          reply.raw.write(': heartbeat\n\n');
+        } catch (error) {
+          clearInterval(heartbeatInterval);
+        }
+      }, 30000);
+
+      // Handle client disconnect
+      request.raw.on('close', () => {
+        clearInterval(heartbeatInterval);
+        notificationService.removeClient(userId, reply);
+        fastify.log.info(`User ${userId} disconnected from signal stream`);
+      });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.code(401).send({ error: 'Invalid token' });
+    }
+  });
+
+  // Get SSE connection stats (admin/debug endpoint)
+  fastify.get('/api/signals/stream/stats', { preHandler: authMiddleware }, async (request, reply) => {
+    const userId = request.user!.id;
+
+    if (!notificationService) {
+      return reply.send({ connected: false, clientCount: 0 });
+    }
+
+    return reply.send({
+      connected: true,
+      userClientCount: notificationService.getClientCount(userId),
+      totalClientCount: notificationService.getTotalClientCount(),
+    });
+  });
 }

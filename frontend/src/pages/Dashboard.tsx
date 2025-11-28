@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { signalsAPI, newsAPI, type Signal, type NewsArticle } from '../services/api';
+import { useRealTimeSignals } from '../hooks/useRealTimeSignals';
 import '../styles/Dashboard.css';
 
 export default function Dashboard() {
@@ -18,6 +19,17 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
+  // Real-time signal stream
+  const { connected: streamConnected } = useRealTimeSignals({
+    autoConnect: true,
+    onSignal: (signal) => {
+      console.log('📡 New signal received:', signal);
+      // Update latest signal immediately
+      setLatestSignal(signal);
+      setLastRefresh(new Date());
+    }
+  });
+
   useEffect(() => {
     if (!user) {
       navigate('/login');
@@ -25,12 +37,13 @@ export default function Dashboard() {
     }
     loadDashboard();
 
-    // Auto-refresh every 5 minutes
-    const refreshInterval = setInterval(() => {
-      loadDashboard();
-    }, 5 * 60 * 1000); // 5 minutes
+    // Note: No more polling! Real-time signals are delivered via SSE
+    // Only refresh news periodically
+    const newsRefreshInterval = setInterval(() => {
+      loadNews();
+    }, 15 * 60 * 1000); // 15 minutes for news
 
-    return () => clearInterval(refreshInterval);
+    return () => clearInterval(newsRefreshInterval);
   }, [user, navigate]);
 
   const loadDashboard = async () => {
@@ -43,7 +56,8 @@ export default function Dashboard() {
         newsAPI.getNews()
       ]);
 
-      if (signalsResponse.data.signals && signalsResponse.data.signals.length > 0) {
+      // Only set latest signal if we don't have real-time signals yet
+      if (signalsResponse.data.signals && signalsResponse.data.signals.length > 0 && !latestSignal) {
         setLatestSignal(signalsResponse.data.signals[0]);
       }
 
@@ -57,6 +71,17 @@ export default function Dashboard() {
       console.error('Failed to load dashboard:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadNews = async () => {
+    try {
+      const newsResponse = await newsAPI.getNews();
+      if (newsResponse.data.news && newsResponse.data.news.length > 0) {
+        setNews(newsResponse.data.news.slice(0, 15));
+      }
+    } catch (error) {
+      console.error('Failed to load news:', error);
     }
   };
 
@@ -191,6 +216,24 @@ export default function Dashboard() {
             </svg>
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {/* Real-time connection status */}
+            <span style={{
+              fontSize: '12px',
+              color: streamConnected ? '#10b981' : '#ef4444',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: '500'
+            }}>
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: streamConnected ? '#10b981' : '#ef4444',
+                animation: streamConnected ? 'pulse 2s infinite' : 'none'
+              }}></span>
+              {streamConnected ? '🟢 Live' : '🔴 Disconnected'}
+            </span>
             <span style={{ fontSize: '12px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="23 4 23 10 17 10"></polyline>

@@ -291,7 +291,7 @@ export class AISignalGenerator {
 
             // Apply ML prediction (MACHINE LEARNING BOOST)
             // Estimate leverage based on confidence (actual leverage calculated later per user)
-            const estimatedLeverage = signal.overallScore >= 80 ? 10 : signal.overallScore >= 70 ? 7 : signal.overallScore >= 60 ? 5 : 3;
+            const estimatedLeverage = signal.overallScore >= 80 ? 10 : signal.overallScore >= 70 ? 7 : 5;
             const mlPrediction = await mlSignalEnhancer.predictWinProbability(
               signal,
               signal.technicalIndicators,
@@ -320,7 +320,7 @@ export class AISignalGenerator {
             // Update signal strength based on final ML-adjusted confidence
             if (signal.overallScore >= 80) {
               signal.strength = 'STRONG';
-            } else if (signal.overallScore >= 60) {
+            } else if (signal.overallScore >= 70) {
               signal.strength = 'MODERATE';
             } else {
               signal.strength = 'WEAK';
@@ -628,10 +628,10 @@ export class AISignalGenerator {
       return null;
     }
 
-    // Minimum 60% confidence - NO WEAK SIGNALS
+    // Minimum 70% confidence - NO WEAK SIGNALS
     const shouldGenerate =
       (technicalSignal.type === 'BUY' || technicalSignal.type === 'SELL') &&
-      technicalSignal.confidence >= 60;
+      technicalSignal.confidence >= 70;
 
     if (!shouldGenerate) {
       return null;
@@ -659,18 +659,18 @@ export class AISignalGenerator {
 
   /**
    * Determine if enhanced signal should be generated
-   * Minimum 60% confidence - NO WEAK SIGNALS
+   * Minimum 70% confidence - NO WEAK SIGNALS
    */
   private shouldGenerateSignal(signal: EnhancedSignal): boolean {
     // Generate signal if:
     // 1. Strong signal (80%+)
-    // 2. Moderate BUY or SELL (60%+)
+    // 2. Moderate BUY or SELL (70%+)
     // 3. HOLD signals are suppressed unless very high confidence
     if (signal.type === 'HOLD') {
       return signal.overallScore >= 80; // Only show HOLD if very confident
     }
 
-    return signal.overallScore >= 60; // No weak signals
+    return signal.overallScore >= 70; // No weak signals
   }
 
   /**
@@ -812,10 +812,10 @@ export class AISignalGenerator {
         actionEmoji = '✅';
       }
     } else {
-      recommendation = signal.overallScore >= 60
+      recommendation = signal.overallScore >= 70
         ? '✅ Signal confirmed - Position still valid'
         : '⚠️ Confidence dropped - Consider reducing position';
-      actionEmoji = signal.overallScore >= 60 ? '✅' : '⚠️';
+      actionEmoji = signal.overallScore >= 70 ? '✅' : '⚠️';
     }
 
     let message = `📊 *POSITION UPDATE* ${actionEmoji}\n`;

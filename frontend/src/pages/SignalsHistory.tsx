@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { signalsAPI, type Signal } from '../services/api';
+import { useRealTimeSignals } from '../hooks/useRealTimeSignals';
 import '../styles/SignalsHistory.css';
 
 export default function SignalsHistory() {
@@ -11,15 +12,20 @@ export default function SignalsHistory() {
   const [timezone] = useState(() => localStorage.getItem('timezone') || 'Africa/Cairo');
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
+  // Real-time signal stream
+  const { connected: streamConnected } = useRealTimeSignals({
+    autoConnect: true,
+    onSignal: (signal) => {
+      console.log('📡 New signal received in history:', signal);
+      // Prepend new signal to the list
+      setSignals(prev => [signal, ...prev]);
+      setLastRefresh(new Date());
+    }
+  });
+
   useEffect(() => {
     fetchSignals();
-
-    // Auto-refresh every 5 minutes
-    const refreshInterval = setInterval(() => {
-      fetchSignals();
-    }, 5 * 60 * 1000); // 5 minutes
-
-    return () => clearInterval(refreshInterval);
+    // Note: No more polling! Real-time signals are delivered via SSE
   }, []);
 
   const fetchSignals = async () => {
@@ -72,13 +78,32 @@ export default function SignalsHistory() {
       <div className="signals-header">
         <div>
           <h1>Signal History</h1>
-          <span style={{ fontSize: '12px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-            </svg>
-            Updated {formatDate(lastRefresh.toISOString())} • Refreshes every 5min
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '4px' }}>
+            <span style={{
+              fontSize: '12px',
+              color: streamConnected ? '#10b981' : '#ef4444',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: '500'
+            }}>
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: streamConnected ? '#10b981' : '#ef4444',
+                animation: streamConnected ? 'pulse 2s infinite' : 'none'
+              }}></span>
+              {streamConnected ? '🟢 Live' : '🔴 Disconnected'}
+            </span>
+            <span style={{ fontSize: '12px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              Updated {formatDate(lastRefresh.toISOString())}
+            </span>
+          </div>
         </div>
         <div className="filter-buttons">
           {(['ALL', 'BUY', 'SELL', 'HOLD'] as const).map((filterType) => (

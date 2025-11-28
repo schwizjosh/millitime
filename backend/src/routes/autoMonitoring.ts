@@ -2,17 +2,21 @@ import { FastifyInstance } from 'fastify';
 import { authMiddleware } from '../middleware/auth';
 import AutoMonitoringService from '../services/autoMonitoringService';
 
-let autoMonitoringService: AutoMonitoringService;
+let getAutoMonitoringService: () => AutoMonitoringService | null;
 
-export async function autoMonitoringRoutes(fastify: FastifyInstance, options: { autoMonitoringService: AutoMonitoringService }) {
-  autoMonitoringService = options.autoMonitoringService;
+export async function autoMonitoringRoutes(fastify: FastifyInstance, options: { getAutoMonitoringService: () => AutoMonitoringService | null }) {
+  getAutoMonitoringService = options.getAutoMonitoringService;
 
   // Get auto-monitored coins for the current user
   fastify.get('/api/auto-monitoring/coins', { preHandler: authMiddleware }, async (request, reply) => {
     const userId = request.user!.id;
+    const service = getAutoMonitoringService();
+    if (!service) {
+      return reply.code(503).send({ error: 'Auto-monitoring service not ready' });
+    }
 
     try {
-      const coins = await autoMonitoringService.getAutoMonitoredCoins(userId);
+      const coins = await service.getAutoMonitoredCoins(userId);
       return reply.send({ coins });
     } catch (error: any) {
       fastify.log.error('Error fetching auto-monitored coins:', error);
@@ -24,9 +28,13 @@ export async function autoMonitoringRoutes(fastify: FastifyInstance, options: { 
   fastify.get('/api/auto-monitoring/logs', { preHandler: authMiddleware }, async (request, reply) => {
     const userId = request.user!.id;
     const { limit } = request.query as { limit?: string };
+    const service = getAutoMonitoringService();
+    if (!service) {
+      return reply.code(503).send({ error: 'Auto-monitoring service not ready' });
+    }
 
     try {
-      const logs = await autoMonitoringService.getAutoMonitoringLogs(
+      const logs = await service.getAutoMonitoringLogs(
         userId,
         limit ? parseInt(limit) : 100
       );
@@ -70,9 +78,13 @@ export async function autoMonitoringRoutes(fastify: FastifyInstance, options: { 
   fastify.put('/api/auto-monitoring/config', { preHandler: authMiddleware }, async (request, reply) => {
     const userId = request.user!.id;
     const config = request.body as any;
+    const service = getAutoMonitoringService();
+    if (!service) {
+      return reply.code(503).send({ error: 'Auto-monitoring service not ready' });
+    }
 
     try {
-      await autoMonitoringService.updateConfig(userId, config);
+      await service.updateConfig(userId, config);
 
       // Fetch updated config
       const client = await fastify.pg.connect();

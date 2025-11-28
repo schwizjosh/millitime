@@ -20,6 +20,7 @@ import { ExchangeIntegrationService } from './services/exchangeIntegration';
 import { AIProviderService } from './services/aiProvider';
 import { NewsAggregationService } from './services/newsAggregationService';
 import AutoMonitoringService from './services/autoMonitoringService';
+import { SignalNotificationService } from './services/signalNotificationService';
 
 dotenv.config();
 
@@ -78,15 +79,18 @@ fastify.get('/api/test-db', async (request, reply) => {
 // Register routes
 fastify.register(authRoutes);
 fastify.register(watchlistRoutes);
-fastify.register(signalsRoutes);
+// Register signals routes with notification service (will be initialized after server starts)
+fastify.register(async (fastify) => {
+  await signalsRoutes(fastify, {
+    signalNotificationService: signalNotificationServiceInstance || undefined
+  });
+});
 fastify.register(tradingRoutes);
 fastify.register(spotlightRoutes);
 fastify.register(backtestRoutes);
 fastify.register(newsRoutes);
 fastify.register(positionsRoutes);
 fastify.register(mlRoutes);
-
-// Auto-monitoring routes will be registered after service initialization
 
 // Initialize AI provider globally for usage stats endpoint
 let globalAIProvider: AIProviderService | undefined;
@@ -107,6 +111,18 @@ if (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || process.env.OPE
 
 // Register AI usage stats route
 fastify.register(aiUsageRoutes, { aiProvider: globalAIProvider });
+
+// Holder for auto-monitoring service - will be set after server starts
+let autoMonitoringServiceInstance: AutoMonitoringService | null = null;
+
+// Create a getter function that routes can use
+const getAutoMonitoringService = () => autoMonitoringServiceInstance;
+
+// Holder for signal notification service - will be set after server starts
+let signalNotificationServiceInstance: SignalNotificationService | null = null;
+
+// Register auto-monitoring routes BEFORE listen() with a service getter
+fastify.register(autoMonitoringRoutes, { getAutoMonitoringService });
 
 const start = async () => {
   try {
@@ -147,11 +163,13 @@ const start = async () => {
 
     // Start Auto-Monitoring Service
     console.log('🎯 Starting Auto-Monitoring Service...');
-    const autoMonitoringService = new AutoMonitoringService(fastify);
-    autoMonitoringService.start();
+    autoMonitoringServiceInstance = new AutoMonitoringService(fastify);
+    autoMonitoringServiceInstance.start();
 
-    // Register auto-monitoring routes with service instance
-    await fastify.register(autoMonitoringRoutes, { autoMonitoringService });
+    // Start Signal Notification Service for real-time signal delivery
+    console.log('📡 Starting Signal Notification Service...');
+    signalNotificationServiceInstance = new SignalNotificationService(fastify);
+    await signalNotificationServiceInstance.start();
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
